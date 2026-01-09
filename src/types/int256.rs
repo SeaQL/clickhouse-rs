@@ -496,7 +496,7 @@ macro_rules! impl_try_from_int256_signed {
             type Error = TryFromInt256Error;
 
             fn try_from(value: Int256) -> Result<Self, Self::Error> {
-                Ok(<$ty>::from_le_bytes(value.narrow_to_le_bytes::<_, true>().ok_or(TryFromInt256Error(()))?))
+                Ok(<$ty>::from_le_bytes(value.narrow_to_le_bytes::<{ std::mem::size_of::<$ty>() }, true>().ok_or(TryFromInt256Error(()))?))
             }
         }
     )*};

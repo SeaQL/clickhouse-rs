@@ -1,8 +1,8 @@
 [package]
-name = "clickhouse"
+name = "sea-clickhouse"
 version = "0.14.2"
-description = "Official Rust client for ClickHouse DB"
-keywords = ["clickhouse", "database", "driver", "tokio", "hyper"]
+description = "ClickHouse Client with SeaQL integration"
+keywords = ["clickhouse", "database"]
 readme = "README.md"
 authors.workspace = true
 homepage.workspace = true
@@ -10,6 +10,10 @@ repository.workspace = true
 license.workspace = true
 edition.workspace = true
 rust-version.workspace = true
+
+[lib]
+name = "clickhouse"
+path = "src/lib.rs"
 
 [workspace]
 members = ["macros", "types"]

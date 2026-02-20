@@ -6,7 +6,7 @@ use clickhouse_types::{DataTypeNode, parse_rbwnat_columns_header};
 use crate::{
     bytes_ext::BytesExt,
     cursors::RawCursor,
-    data_row::DataRow,
+    data_row::{DataRow, RowBatch},
     error::{Error, Result},
     response::Response,
     rowbinary::value_de::decode_row,
@@ -109,6 +109,46 @@ impl DataRowCursor {
                 None => return Ok(None),
             }
         }
+    }
+
+    /// Reads up to `max_rows` rows and returns them as a column-oriented [`RowBatch`].
+    ///
+    /// Returns `Ok(None)` when all rows have been consumed.
+    /// The result is unspecified if called after an `Err` is returned.
+    pub async fn next_batch(&mut self, max_rows: usize) -> Result<Option<RowBatch>> {
+        if self.column_types.is_none() {
+            self.read_header().await?;
+        }
+
+        let column_count = self.column_types.as_ref().expect("just initialised").len();
+
+        let mut column_data: Vec<Vec<sea_query::Value>> = (0..column_count)
+            .map(|_| Vec::with_capacity(max_rows))
+            .collect();
+        let mut num_rows = 0;
+
+        while num_rows < max_rows {
+            match self.next().await? {
+                Some(row) => {
+                    for (col, value) in column_data.iter_mut().zip(row.values) {
+                        col.push(value);
+                    }
+                    num_rows += 1;
+                }
+                None => break,
+            }
+        }
+
+        if num_rows == 0 {
+            return Ok(None);
+        }
+
+        let columns = self.columns.as_ref().expect("header was read").clone();
+        Ok(Some(RowBatch {
+            columns,
+            column_data,
+            num_rows,
+        }))
     }
 
     #[cold]

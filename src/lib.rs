@@ -6,7 +6,10 @@ pub use self::{
     row::{Row, RowOwned, RowRead, RowWrite},
 };
 #[cfg(feature = "sea-query")]
-pub use self::{data_row::DataRow, query::DataRowCursor};
+pub use self::{
+    data_row::{DataRow, RowBatch},
+    query::DataRowCursor,
+};
 use self::{error::Result, http_client::HttpClient};
 use crate::row_metadata::{AccessType, ColumnDefaultKind, InsertMetadata, RowMetadata};
 

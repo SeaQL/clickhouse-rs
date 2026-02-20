@@ -5,6 +5,8 @@ pub use self::{
     compression::Compression,
     row::{Row, RowOwned, RowRead, RowWrite},
 };
+#[cfg(feature = "sea-query")]
+pub use self::{data_row::DataRow, query::DataRowCursor};
 use self::{error::Result, http_client::HttpClient};
 use crate::row_metadata::{AccessType, ColumnDefaultKind, InsertMetadata, RowMetadata};
 
@@ -33,6 +35,8 @@ pub mod types;
 mod bytes_ext;
 mod compression;
 mod cursors;
+#[cfg(feature = "sea-query")]
+mod data_row;
 mod headers;
 mod http_client;
 mod request_body;

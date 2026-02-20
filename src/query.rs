@@ -14,6 +14,8 @@ use crate::{
     sql::{Bind, SqlBuilder, ser},
 };
 
+#[cfg(feature = "sea-query")]
+pub use crate::cursors::DataRowCursor;
 pub use crate::cursors::{BytesCursor, RowCursor};
 use crate::headers::with_authentication;
 use crate::settings;
@@ -137,6 +139,32 @@ impl Query {
         }
 
         Ok(result)
+    }
+
+    /// Executes the query, returning a [`DataRowCursor`] to obtain dynamically-typed results.
+    ///
+    /// Each row is decoded into a [`crate::DataRow`] containing a [`sea_query::Value`]
+    /// for every column, using the `RowBinaryWithNamesAndTypes` format so that type
+    /// information is always available.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut cursor = client
+    ///     .query("SELECT number, toString(number) AS s FROM system.numbers LIMIT 3")
+    ///     .fetch_rows()?;
+    ///
+    /// while let Some(row) = cursor.next().await? {
+    ///     for (col, val) in row.columns.iter().zip(&row.values) {
+    ///         println!("{col}: {val:?}");
+    ///     }
+    /// }
+    /// ```
+    #[cfg(feature = "sea-query")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "sea-query")))]
+    pub fn fetch_rows(self) -> Result<DataRowCursor> {
+        let response = self.do_execute(Some(formats::ROW_BINARY_WITH_NAMES_AND_TYPES))?;
+        Ok(DataRowCursor::new(response))
     }
 
     /// Executes the query, returning a [`BytesCursor`] to obtain results as raw

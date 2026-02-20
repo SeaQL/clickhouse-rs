@@ -88,6 +88,10 @@ required-features = ["time"]
 name = "time_types_example"
 required-features = ["time", "chrono"]
 
+[[example]]
+name = "data_rows"
+required-features = ["sea-query"]
+
 [profile.release]
 debug = true
 
@@ -101,6 +105,7 @@ time = ["dep:time"]
 lz4 = ["dep:lz4_flex", "dep:cityhash-rs"]
 chrono = ["dep:chrono"]
 futures03 = []
+sea-query = ["dep:sea-query"]
 
 ##  TLS
 native-tls = ["dep:hyper-tls"]
@@ -152,6 +157,14 @@ cityhash-rs = { version = "=1.0.1", optional = true } # exact version for safety
 uuid = { version = "1", optional = true }
 time = { version = "0.3", optional = true }
 chrono = { version = "0.4", optional = true, features = ["serde"] }
+sea-query = { version = "1.0.0-rc", optional = true, default-features = false, features = [
+    "with-chrono",
+    "with-uuid",
+    "with-rust_decimal",
+    "with-bigdecimal",
+    "with-json",
+    "postgres-array",
+] }
 bstr = { version = "1.11.0", default-features = false }
 quanta = { version = "0.12", optional = true }
 polonius-the-crab = "0.5.0"

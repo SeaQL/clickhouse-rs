@@ -4,8 +4,10 @@
 //!   cargo run --example arrow_batch --features arrow
 
 use clickhouse::{Client, error::Result};
-use sea_orm_arrow::arrow::array::{Array, Int32Array, StringArray, UInt64Array};
-use sea_orm_arrow::arrow::datatypes::DataType;
+use sea_orm_arrow::arrow::array::{
+    Array, Decimal128Array, Decimal256Array, Int32Array, StringArray, UInt64Array,
+};
+use sea_orm_arrow::arrow::datatypes::{DataType, i256};
 
 /// Basic column layout: schema fields and typed array values are correct.
 async fn test_column_layout(client: &Client) -> Result<()> {
@@ -156,6 +158,104 @@ async fn test_empty(client: &Client) -> Result<()> {
     Ok(())
 }
 
+/// Decimal128: ClickHouse Decimal128 columns map to Arrow `Decimal128Array`.
+/// Raw i128 values with the column scale encode the fixed-point number.
+async fn test_decimal128(client: &Client) -> Result<()> {
+    let mut cursor = client
+        .query(
+            "SELECT
+                toDecimal128('3.1415', 4)  AS pi,
+                toDecimal128('-2.5000', 4) AS neg",
+        )
+        .fetch_rows()?;
+
+    let batch = cursor
+        .next_arrow_batch(10)
+        .await?
+        .expect("expected a batch");
+    assert!(cursor.next_arrow_batch(10).await?.is_none());
+
+    assert_eq!(batch.num_rows(), 1);
+    // ClickHouse Decimal128 has precision 38.
+    assert_eq!(
+        *batch.schema().field(0).data_type(),
+        DataType::Decimal128(38, 4)
+    );
+    assert_eq!(
+        *batch.schema().field(1).data_type(),
+        DataType::Decimal128(38, 4)
+    );
+
+    let pi_col = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<Decimal128Array>()
+        .unwrap();
+    let neg_col = batch
+        .column(1)
+        .as_any()
+        .downcast_ref::<Decimal128Array>()
+        .unwrap();
+
+    // 3.1415 stored as raw integer 31415 (= 3.1415 × 10^4).
+    assert_eq!(pi_col.value(0), 31415);
+    // -2.5 stored as -25000.
+    assert_eq!(neg_col.value(0), -25000);
+
+    println!("test_decimal128: OK");
+    Ok(())
+}
+
+/// Decimal256: ClickHouse Decimal256 columns map to Arrow `Decimal256Array` (`i256`).
+async fn test_decimal256(client: &Client) -> Result<()> {
+    let mut cursor = client
+        .query(
+            "SELECT
+                toDecimal256('9.876543210987654321', 18)  AS pos,
+                toDecimal256('-1.000000000000000001', 18) AS neg",
+        )
+        .fetch_rows()?;
+
+    let batch = cursor
+        .next_arrow_batch(10)
+        .await?
+        .expect("expected a batch");
+    assert!(cursor.next_arrow_batch(10).await?.is_none());
+
+    assert_eq!(batch.num_rows(), 1);
+    // ClickHouse Decimal256 has precision 76.
+    assert_eq!(
+        *batch.schema().field(0).data_type(),
+        DataType::Decimal256(76, 18)
+    );
+    assert_eq!(
+        *batch.schema().field(1).data_type(),
+        DataType::Decimal256(76, 18)
+    );
+
+    let pos_col = batch
+        .column(0)
+        .as_any()
+        .downcast_ref::<Decimal256Array>()
+        .unwrap();
+    let neg_col = batch
+        .column(1)
+        .as_any()
+        .downcast_ref::<Decimal256Array>()
+        .unwrap();
+
+    // 9.876543210987654321 × 10^18 = 9876543210987654321
+    assert_eq!(pos_col.value(0), i256::from_i128(9_876_543_210_987_654_321));
+    // -1.000000000000000001 × 10^18 = -1000000000000000001
+    assert_eq!(
+        neg_col.value(0),
+        i256::from_i128(-1_000_000_000_000_000_001)
+    );
+
+    println!("test_decimal256: OK");
+    Ok(())
+}
+
 /// Schema is shared across batches (same Arc pointer).
 async fn test_schema_shared(client: &Client) -> Result<()> {
     let mut cursor = client
@@ -185,6 +285,8 @@ async fn main() -> Result<()> {
     test_mixed_types(&client).await?;
     test_empty(&client).await?;
     test_schema_shared(&client).await?;
+    test_decimal128(&client).await?;
+    test_decimal256(&client).await?;
 
     println!("All tests OK");
     Ok(())

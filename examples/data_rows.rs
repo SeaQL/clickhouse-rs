@@ -6,7 +6,9 @@
 
 use clickhouse::{Client, DataRow, error::Result};
 use sea_query::Value;
-use sea_query::value::prelude::{Decimal, NaiveDate, NaiveDateTime, NaiveTime, serde_json};
+use sea_query::value::prelude::{
+    BigDecimal, Decimal, NaiveDate, NaiveDateTime, NaiveTime, serde_json,
+};
 
 async fn test_types(client: &Client) -> Result<()> {
     let mut cursor = client
@@ -62,6 +64,7 @@ async fn test_types(client: &Client) -> Result<()> {
         values[7],
         Value::Decimal(Some(Decimal::from_i128_with_scale(12345, 2)))
     );
+    assert_eq!(values[7].to_string(), "123.45");
 
     // Nullable null → typed null
     assert_eq!(values[8], Value::Int(None));
@@ -232,6 +235,33 @@ async fn test_type_promotion(client: &Client) -> Result<()> {
     Ok(())
 }
 
+async fn test_decimals(client: &Client) -> Result<()> {
+    let mut cursor = client
+        .query(
+            "SELECT
+                toDecimal128('3.1415926535897932384', 2) AS dec128_col,
+                toDecimal256('3.1415926535897932384626433833', 2) AS dec256_col
+            ",
+        )
+        .fetch_rows()?;
+
+    let row = cursor.next().await?.expect("expected one row");
+    assert!(cursor.next().await?.is_none());
+
+    let DataRow { columns: _, values } = &row;
+
+    // Decimal128 → Decimal
+    let expected: Decimal = "3.1415926535897932384".parse().unwrap();
+    assert_eq!(values[0], Value::Decimal(Some(expected)));
+
+    // Decimal256 → BigDecimal
+    let expected: BigDecimal = "3.1415926535897932384626433833".parse().unwrap();
+    assert_eq!(values[1], Value::BigDecimal(Some(Box::new(expected))));
+
+    println!("test_decimals: OK");
+    Ok(())
+}
+
 async fn test_empty_result(client: &Client) -> Result<()> {
     let mut cursor = client
         .query("SELECT 1::UInt8 AS x WHERE 1 = 0")
@@ -254,6 +284,7 @@ async fn main() -> Result<()> {
     test_math_functions(&client).await?;
     test_date_functions(&client).await?;
     test_type_promotion(&client).await?;
+    test_decimals(&client).await?;
 
     println!("All tests OK");
     Ok(())

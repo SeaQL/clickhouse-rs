@@ -239,8 +239,8 @@ async fn test_decimals(client: &Client) -> Result<()> {
     let mut cursor = client
         .query(
             "SELECT
-                toDecimal128('3.1415926535897932384', 2) AS dec128_col,
-                toDecimal256('3.1415926535897932384626433833', 2) AS dec256_col
+                toDecimal128('3.1415926535897932384626433833', 28) AS dec128_col,
+                toDecimal256('3.14159265358979323846264338327950288419716939937510', 50) AS dec256_col
             ",
         )
         .fetch_rows()?;
@@ -251,11 +251,13 @@ async fn test_decimals(client: &Client) -> Result<()> {
     let DataRow { columns: _, values } = &row;
 
     // Decimal128 → Decimal
-    let expected: Decimal = "3.1415926535897932384".parse().unwrap();
+    let expected: Decimal = "3.1415926535897932384626433833".parse().unwrap();
     assert_eq!(values[0], Value::Decimal(Some(expected)));
 
     // Decimal256 → BigDecimal
-    let expected: BigDecimal = "3.1415926535897932384626433833".parse().unwrap();
+    let expected: BigDecimal = "3.14159265358979323846264338327950288419716939937510"
+        .parse()
+        .unwrap();
     assert_eq!(values[1], Value::BigDecimal(Some(Box::new(expected))));
 
     println!("test_decimals: OK");

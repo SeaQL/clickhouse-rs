@@ -14,7 +14,7 @@ use sea_orm_arrow::arrow::{array::RecordBatch, util::pretty};
 const SQL: &str = r#"
     SELECT
         toUInt64(number) + 1                                      AS id,
-        toDateTime('2024-01-01 00:00:00') + (rand() % 86400)      AS recorded_at,
+        toDateTime('2026-01-01 00:00:00') + (rand() % 86400)      AS recorded_at,
         toInt32(100 + rand() % 10)                                AS sensor_id,
         -10.0 + randUniform(0.0, 50.0)                            AS temperature,
         toDecimal128(3.0 + toFloat64(rand() % 5000) / 10000.0, 4) AS voltage

@@ -126,6 +126,9 @@ fn typed_null(dt: &DataTypeNode) -> Value {
         DataTypeNode::Time | DataTypeNode::Time64(_) => Value::ChronoTime(None),
         DataTypeNode::Decimal(_, _, DecimalType::Decimal32)
         | DataTypeNode::Decimal(_, _, DecimalType::Decimal64) => Value::Decimal(None),
+        DataTypeNode::Decimal(_, scale, DecimalType::Decimal128) if *scale <= 28 => {
+            Value::Decimal(None)
+        }
         DataTypeNode::Decimal(_, _, DecimalType::Decimal128)
         | DataTypeNode::Decimal(_, _, DecimalType::Decimal256) => Value::BigDecimal(None),
         DataTypeNode::IPv4 | DataTypeNode::IPv6 => Value::String(None),
@@ -367,11 +370,18 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
             ))))
         }
         DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal128) => {
-            // Decimal128 can have up to 38 digits, exceeding Decimal's 28-digit limit.
             let b = read_bytes(input, 16)?;
             let raw = i128::from_le_bytes(b.try_into().unwrap());
-            let bd = bigdecimal_with_scale(&raw.to_string(), *scale)?;
-            Ok(Value::BigDecimal(Some(Box::new(bd))))
+            if *scale <= 28 {
+                Ok(Value::Decimal(Some(Decimal::from_i128_with_scale(
+                    raw,
+                    *scale as u32,
+                ))))
+            } else {
+                // scale > 28 exceeds rust_decimal's limit; fall back to BigDecimal.
+                let bd = bigdecimal_with_scale(&raw.to_string(), *scale)?;
+                Ok(Value::BigDecimal(Some(Box::new(bd))))
+            }
         }
         DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal256) => {
             let b = read_bytes(input, 32)?;

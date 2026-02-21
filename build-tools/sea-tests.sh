@@ -1,3 +1,4 @@
+set -e
 cargo run --example data_rows --features=sea-ql
 cargo run --example data_row_insert --features sea-ql
 cargo run --example row_batch --features=sea-ql

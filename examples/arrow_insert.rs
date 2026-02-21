@@ -16,7 +16,10 @@ use sea_orm_arrow::arrow::{
     record_batch::RecordBatch,
 };
 use sea_query::Value;
-use sea_query::prelude::bigdecimal::{BigDecimal, num_bigint::BigInt};
+use sea_query::prelude::{
+    Decimal,
+    bigdecimal::{BigDecimal, num_bigint::BigInt},
+};
 
 const TABLE: &str = "arrow_insert_example";
 
@@ -100,6 +103,15 @@ async fn select_all(client: &Client) -> Result<Vec<DataRow>> {
     Ok(rows)
 }
 
+/// Construct the `Value::Decimal` that `value_de` produces for a Decimal128 raw integer
+/// with scale ≤ 28 (mirrors the `Decimal::from_i128_with_scale` branch in value_de.rs).
+fn expected_dec(raw: i64, scale: i8) -> Value {
+    Value::Decimal(Some(Decimal::from_i128_with_scale(
+        raw as i128,
+        scale as u32,
+    )))
+}
+
 /// Construct the `Value::BigDecimal` that `value_de` produces for a raw integer
 /// with the given scale (mirrors `bigdecimal_with_scale` in value_de.rs).
 fn expected_bd(raw: i64, scale: i8) -> Value {
@@ -160,7 +172,7 @@ async fn main() -> Result<()> {
             Value::String(Some(expected_labels[i].to_owned()))
         );
         assert_eq!(row.values[2], Value::Double(Some(i as f64 * 1.5)));
-        assert_eq!(row.values[3], expected_bd(prices[i] as i64, D128_SCALE));
+        assert_eq!(row.values[3], expected_dec(prices[i] as i64, D128_SCALE));
         assert_eq!(row.values[4], expected_bd(weights[i], D256_SCALE));
     }
     println!("Round-trip assertions: OK");

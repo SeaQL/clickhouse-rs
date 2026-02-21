@@ -181,8 +181,7 @@ pub(crate) fn element_to_value(array: &dyn Array, dtype: &DataType, row: usize) 
             let a = downcast::<Decimal128Array>(array, "Decimal128")?;
             let raw = a.value(row);
             let scale = *scale;
-            if scale >= 0 && scale <= 28 {
-                let dec = Decimal::from_i128_with_scale(raw, scale as u32);
+            if let Ok(dec) = Decimal::try_from_i128_with_scale(raw, scale as u32) {
                 Value::Decimal(Some(dec))
             } else {
                 bigdecimal_from_i128(raw, scale as i64)?

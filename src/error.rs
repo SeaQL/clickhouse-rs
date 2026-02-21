@@ -47,6 +47,9 @@ pub enum Error {
     SchemaMismatch(String),
     #[error("unsupported: {0}")]
     Unsupported(String),
+    #[cfg(feature = "sea-ql")]
+    #[error("type error: {0}")]
+    TypeError(#[from] crate::TypeError),
     #[error("{0}")]
     Other(BoxedError),
 }

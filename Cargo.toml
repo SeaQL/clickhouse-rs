@@ -93,6 +93,10 @@ name = "data_rows"
 required-features = ["sea-ql"]
 
 [[example]]
+name = "data_row_insert"
+required-features = ["sea-ql"]
+
+[[example]]
 name = "row_batch"
 required-features = ["sea-ql"]
 
@@ -102,6 +106,10 @@ required-features = ["arrow"]
 
 [[example]]
 name = "arrow_sensor_data"
+required-features = ["arrow"]
+
+[[example]]
+name = "arrow_insert"
 required-features = ["arrow"]
 
 [profile.release]

@@ -8,6 +8,7 @@ pub use self::{
 #[cfg(feature = "sea-ql")]
 pub use self::{
     data_row::{DataRow, RowBatch},
+    insert_data_row::DataRowInsert,
     query::DataRowCursor,
 };
 use self::{error::Result, http_client::HttpClient};
@@ -24,6 +25,8 @@ use tokio::sync::RwLock;
 
 pub mod error;
 pub mod insert;
+#[cfg(feature = "sea-ql")]
+pub mod insert_data_row;
 pub mod insert_formatted;
 #[cfg(feature = "inserter")]
 pub mod inserter;

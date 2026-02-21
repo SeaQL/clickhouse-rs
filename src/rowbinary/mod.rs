@@ -3,7 +3,7 @@ pub(crate) use ser::serialize_row_binary;
 pub(crate) use ser::serialize_with_validation;
 
 pub(crate) mod validation;
-#[cfg(feature = "sea-query")]
+#[cfg(feature = "sea-ql")]
 pub(crate) mod value_de;
 
 mod de;

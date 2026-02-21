@@ -2,7 +2,7 @@
 //! without any compile-time struct definition.
 //!
 //! Run with:
-//!   cargo run --example data_rows --features sea-query
+//!   cargo run --example data_rows --features sea-ql
 
 use clickhouse::{Client, DataRow, error::Result};
 use sea_query::Value;

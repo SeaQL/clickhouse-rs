@@ -14,7 +14,7 @@ use crate::{
     sql::{Bind, SqlBuilder, ser},
 };
 
-#[cfg(feature = "sea-query")]
+#[cfg(feature = "sea-ql")]
 pub use crate::cursors::DataRowCursor;
 pub use crate::cursors::{BytesCursor, RowCursor};
 use crate::headers::with_authentication;
@@ -160,8 +160,8 @@ impl Query {
     ///     }
     /// }
     /// ```
-    #[cfg(feature = "sea-query")]
-    #[cfg_attr(docsrs, doc(cfg(feature = "sea-query")))]
+    #[cfg(feature = "sea-ql")]
+    #[cfg_attr(docsrs, doc(cfg(feature = "sea-ql")))]
     pub fn fetch_rows(self) -> Result<DataRowCursor> {
         let response = self.do_execute(Some(formats::ROW_BINARY_WITH_NAMES_AND_TYPES))?;
         Ok(DataRowCursor::new(response))

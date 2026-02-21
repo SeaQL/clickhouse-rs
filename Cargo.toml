@@ -90,7 +90,19 @@ required-features = ["time", "chrono"]
 
 [[example]]
 name = "data_rows"
-required-features = ["sea-query"]
+required-features = ["sea-ql"]
+
+[[example]]
+name = "row_batch"
+required-features = ["sea-ql"]
+
+[[example]]
+name = "arrow_batch"
+required-features = ["arrow"]
+
+[[example]]
+name = "arrow_sensor_data"
+required-features = ["arrow"]
 
 [profile.release]
 debug = true
@@ -105,7 +117,8 @@ time = ["dep:time"]
 lz4 = ["dep:lz4_flex", "dep:cityhash-rs"]
 chrono = ["dep:chrono"]
 futures03 = []
-sea-query = ["dep:sea-query"]
+sea-ql = ["sea-query"]
+arrow = ["sea-orm-arrow", "sea-ql"]
 
 ##  TLS
 native-tls = ["dep:hyper-tls"]
@@ -158,12 +171,20 @@ uuid = { version = "1", optional = true }
 time = { version = "0.3", optional = true }
 chrono = { version = "0.4", optional = true, features = ["serde"] }
 sea-query = { version = "1.0.0-rc", optional = true, default-features = false, features = [
-    "with-chrono",
-    "with-uuid",
-    "with-rust_decimal",
-    "with-bigdecimal",
-    "with-json",
     "postgres-array",
+    "with-bigdecimal",
+    "with-chrono",
+    "with-json",
+    "with-rust_decimal",
+    "with-time",
+    "with-uuid",
+] }
+sea-orm-arrow = { version = "2.0.0-rc", optional = true, features = [
+    "prettyprint",
+    "with-bigdecimal",
+    "with-chrono",
+    "with-rust_decimal",
+    "with-time",
 ] }
 bstr = { version = "1.11.0", default-features = false }
 quanta = { version = "0.12", optional = true }

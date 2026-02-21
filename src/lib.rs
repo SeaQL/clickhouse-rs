@@ -5,7 +5,7 @@ pub use self::{
     compression::Compression,
     row::{Row, RowOwned, RowRead, RowWrite},
 };
-#[cfg(feature = "sea-query")]
+#[cfg(feature = "sea-ql")]
 pub use self::{
     data_row::{DataRow, RowBatch},
     query::DataRowCursor,
@@ -35,10 +35,12 @@ pub mod test;
 
 pub mod types;
 
+#[cfg(feature = "arrow")]
+pub mod arrow;
 mod bytes_ext;
 mod compression;
 mod cursors;
-#[cfg(feature = "sea-query")]
+#[cfg(feature = "sea-ql")]
 mod data_row;
 mod headers;
 mod http_client;

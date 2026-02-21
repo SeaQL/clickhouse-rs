@@ -18,7 +18,8 @@ use std::sync::Arc;
 ///     }
 /// }
 /// ```
-#[cfg_attr(docsrs, doc(cfg(feature = "sea-query")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "sea-ql")))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DataRow {
     /// Column names in schema order, shared with all other rows from the same query.
     pub columns: Arc<[Arc<str>]>,
@@ -51,7 +52,8 @@ pub struct DataRow {
 ///     }
 /// }
 /// ```
-#[cfg_attr(docsrs, doc(cfg(feature = "sea-query")))]
+#[cfg_attr(docsrs, doc(cfg(feature = "sea-ql")))]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RowBatch {
     /// Column names in schema order, shared with all other batches from the same query.
     pub columns: Arc<[Arc<str>]>,

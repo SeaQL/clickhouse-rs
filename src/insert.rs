@@ -8,6 +8,7 @@ use crate::{
     row::{self, Row},
 };
 use clickhouse_types::put_rbwnat_columns_header;
+use serde::Serialize;
 use std::{future::Future, marker::PhantomData, time::Duration};
 
 // The desired max frame size.
@@ -65,6 +66,25 @@ impl<T> Insert<T> {
                 .insert_formatted_with(sql)
                 .buffered_with_capacity(BUFFER_SIZE),
             row_metadata,
+            _marker: PhantomData,
+        }
+    }
+
+    /// Converts this typed insert into a type-erased [`Insert<()>`], preserving any
+    /// row metadata (and thus schema validation) that was fetched for `T`.
+    ///
+    /// This lets you to store `Insert<()>` in a container, for example
+    /// `HashMap<std::any::TypeId, Insert<()>>`.
+    ///
+    /// ```ignore
+    /// let mut insert = client.insert::<MyRow>("table").await?.into_any();
+    /// insert.write_any(&MyRow { ... }).await?;
+    /// insert.end().await?;
+    /// ```
+    pub fn into_any(self) -> Insert<()> {
+        Insert {
+            insert: self.insert,
+            row_metadata: self.row_metadata,
             _marker: PhantomData,
         }
     }
@@ -178,11 +198,44 @@ impl<T> Insert<T> {
         }
     }
 
+    /// Writes a row of any type `R` into this insert.
+    ///
+    /// Unlike [`Insert::write`], the row type `R` is inferred directly from the
+    /// argument, no turbofish needed:
+    /// ```ignore
+    /// insert.write_any(&MyRow { ... }).await?;
+    /// ```
+    ///
+    /// This is the primary write method for type-erased [`Insert<()>`] obtained
+    /// from [`Client::insert_any`].
+    pub fn write_any<'a, R>(&'a mut self, row: &R) -> impl Future<Output = Result<()>> + 'a + Send
+    where
+        R: Row + Serialize,
+    {
+        let result = self.do_write_any(row);
+
+        async move {
+            result?;
+            if self.insert.buf_len() >= MIN_CHUNK_SIZE {
+                self.insert.flush().await?;
+            }
+            Ok(())
+        }
+    }
+
     /// Returns the number of bytes written, not including the RBWNAT header.
     #[inline(always)]
     pub(crate) fn do_write(&mut self, row: &T::Value<'_>) -> Result<usize>
     where
         T: RowWrite,
+    {
+        self.do_write_any(row)
+    }
+
+    #[inline(always)]
+    pub(crate) fn do_write_any<R>(&mut self, row: &R) -> Result<usize>
+    where
+        R: Row + Serialize,
     {
         // We don't want to wait for the buffer to be full before we start the request,
         // in the event of an error.

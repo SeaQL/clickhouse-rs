@@ -29,9 +29,9 @@ async fn ddl(client: &Client) -> Result<()> {
 }
 
 async fn insert(client: &Client) -> Result<()> {
-    let mut insert = client.insert::<MyRow<'_>>("some").await?;
+    let mut insert = client.insert_any::<MyRow<'_>>("some").await?;
     for i in 0..1000 {
-        insert.write(&MyRow { no: i, name: "foo" }).await?;
+        insert.write_any(&MyRow { no: i, name: "bar" }).await?;
     }
 
     insert.end().await
@@ -128,7 +128,7 @@ async fn select_count(client: &Client) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = Client::default().with_url("http://localhost:8123");
+    let client = Client::default().with_url("http://localhost:18123");
 
     ddl(&client).await?;
     insert(&client).await?;

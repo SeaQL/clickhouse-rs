@@ -426,6 +426,21 @@ impl Client {
         Ok(insert::Insert::new(self, table, None))
     }
 
+    /// Creates a type-erased [`Insert<()>`] for `table`, using `T` to derive column
+    /// names and (when validation is enabled) to fetch and cache row metadata.
+    ///
+    /// This lets you to store `Insert<()>` in a container, for example
+    /// `HashMap<std::any::TypeId, Insert<()>>`.
+    ///
+    /// ```ignore
+    /// let mut insert = client.insert_any::<MyRow>("table").await?;
+    /// insert.write_any(&MyRow { ... }).await?;
+    /// insert.end().await?;
+    /// ```
+    pub async fn insert_any<T: Row>(&self, table: &str) -> Result<insert::Insert<()>> {
+        Ok(self.insert::<T>(table).await?.into_any())
+    }
+
     /// Creates an inserter to perform multiple INSERT statements.
     #[cfg(feature = "inserter")]
     pub fn inserter<T: Row>(&self, table: &str) -> inserter::Inserter<T> {

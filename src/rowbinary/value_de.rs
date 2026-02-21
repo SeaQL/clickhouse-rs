@@ -372,13 +372,10 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
         DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal128) => {
             let b = read_bytes(input, 16)?;
             let raw = i128::from_le_bytes(b.try_into().unwrap());
-            if *scale <= 28 {
-                Ok(Value::Decimal(Some(Decimal::from_i128_with_scale(
-                    raw,
-                    *scale as u32,
-                ))))
+            if let Ok(dec) = Decimal::try_from_i128_with_scale(raw, *scale as u32) {
+                Ok(Value::Decimal(Some(dec)))
             } else {
-                // scale > 28 exceeds rust_decimal's limit; fall back to BigDecimal.
+                // value exceeds rust_decimal's limit; fall back to BigDecimal.
                 let bd = bigdecimal_with_scale(&raw.to_string(), *scale)?;
                 Ok(Value::BigDecimal(Some(Box::new(bd))))
             }

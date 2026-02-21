@@ -4,7 +4,7 @@
 //! per row, making it a natural stepping stone toward Apache Arrow record batches.
 //!
 //! Run with:
-//!   cargo run --example row_batch --features sea-query
+//!   cargo run --example row_batch --features sea-ql
 
 use clickhouse::{Client, error::Result};
 use sea_query::Value;

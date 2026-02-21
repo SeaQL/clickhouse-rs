@@ -1,5 +1,8 @@
 use std::sync::Arc;
 
+#[cfg(feature = "arrow")]
+use sea_orm_arrow::arrow;
+
 use clickhouse_types::error::TypesError;
 use clickhouse_types::{DataTypeNode, parse_rbwnat_columns_header};
 
@@ -24,6 +27,8 @@ pub struct DataRowCursor {
     columns: Option<Arc<[Arc<str>]>>,
     /// Column types parsed once from the RBWNAT header.
     column_types: Option<Arc<[DataTypeNode]>>,
+    #[cfg(feature = "arrow")]
+    arrow_schema: Option<Arc<arrow::datatypes::Schema>>,
 }
 
 impl DataRowCursor {
@@ -33,6 +38,8 @@ impl DataRowCursor {
             bytes: BytesExt::default(),
             columns: None,
             column_types: None,
+            #[cfg(feature = "arrow")]
+            arrow_schema: None,
         }
     }
 
@@ -151,6 +158,51 @@ impl DataRowCursor {
         }))
     }
 
+    /// Reads up to `max_rows` rows and returns them as an Arrow [`RecordBatch`].
+    ///
+    /// The schema is derived from the `RowBinaryWithNamesAndTypes` header using
+    /// [`crate::arrow::schema::from_columns`] and is available on the returned
+    /// batch via [`RecordBatch::schema`].
+    ///
+    /// Returns `Ok(None)` when all rows have been consumed.
+    /// The result is unspecified if called after an `Err` is returned.
+    ///
+    /// [`RecordBatch`]: sea_orm_arrow::arrow::array::RecordBatch
+    #[cfg(feature = "arrow")]
+    pub async fn next_arrow_batch(
+        &mut self,
+        max_rows: usize,
+    ) -> Result<Option<sea_orm_arrow::arrow::array::RecordBatch>> {
+        use std::sync::Arc;
+
+        let batch = match self.next_batch(max_rows).await? {
+            Some(b) => b,
+            None => return Ok(None),
+        };
+
+        let schema = self
+            .arrow_schema
+            .as_ref()
+            .expect("header was read by next_batch")
+            .clone();
+
+        let columns = schema
+            .fields()
+            .iter()
+            .zip(batch.column_data.iter())
+            .map(
+                |(field, values): (&Arc<arrow::datatypes::Field>, &Vec<sea_query::Value>)| {
+                    sea_orm_arrow::values_to_arrow_array(values, field.data_type())
+                        .map_err(|e| crate::error::Error::Other(Box::new(e)))
+                },
+            )
+            .collect::<Result<Vec<_>>>()?;
+
+        sea_orm_arrow::arrow::array::RecordBatch::try_new(schema, columns)
+            .map_err(|e| crate::error::Error::Other(Box::new(e)))
+            .map(Some)
+    }
+
     #[cold]
     #[inline(never)]
     async fn read_header(&mut self) -> Result<()> {
@@ -160,6 +212,11 @@ impl DataRowCursor {
                 match parse_rbwnat_columns_header(&mut slice) {
                     Ok(cols) if !cols.is_empty() => {
                         self.bytes.set_remaining(slice.len());
+                        #[cfg(feature = "arrow")]
+                        {
+                            self.arrow_schema =
+                                Some(Arc::new(crate::arrow::schema::from_columns(&cols)));
+                        }
                         let columns: Arc<[Arc<str>]> =
                             cols.iter().map(|c| Arc::from(c.name.as_str())).collect();
                         let types: Arc<[DataTypeNode]> =

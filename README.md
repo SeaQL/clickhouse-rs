@@ -184,40 +184,47 @@ $ cargo run --example arrow_sensor_data --features arrow
 
 ### Insert Arrow batches
 
-Build a `RecordBatch` from Arrow arrays - including `Decimal128` and `Decimal256` - and
-insert it directly into ClickHouse.
+Build an Arrow `RecordBatch` [using SeaORM](https://github.com/SeaQL/sea-orm/blob/master/examples/parquet_example/src/main.rs) and insert it directly into ClickHouse.
 
 ```rust
-use std::sync::Arc;
-use sea_orm_arrow::arrow::{
-    array::{Decimal128Array, Decimal256Array, Float64Array, StringArray, UInt32Array},
-    datatypes::{DataType, Field, Schema, i256},
-    record_batch::RecordBatch,
-};
+use sea_orm::ArrowSchema;
 
-let schema = Arc::new(Schema::new(vec![
-    Field::new("id",     DataType::UInt32,            false),
-    Field::new("label",  DataType::Utf8,              false),
-    Field::new("price",  DataType::Decimal128(38, 4), false),  // 4 decimal places
-    Field::new("weight", DataType::Decimal256(76, 8), false),  // 8 decimal places
-]));
+mod measurement {
+    use sea_orm::entity::prelude::*;
 
-// Raw integer values: price 1.2345 -> 12345,  weight 3.14159265 -> 314159265
-let batch = RecordBatch::try_new(schema, vec![
-    Arc::new(UInt32Array::from(vec![1, 2, 3])),
-    Arc::new(StringArray::from(vec!["a", "b", "c"])),
-    Arc::new(
-        Decimal128Array::from(vec![12345_i128, 25000, 31415])
-            .with_precision_and_scale(38, 4).unwrap(),
-    ),
-    Arc::new(
-        Decimal256Array::from(vec![314159265, 271828182, 100000000].into_iter()
-            .map(|v| i256::from_i128(v)).collect::<Vec<_>>())
-            .with_precision_and_scale(76, 8).unwrap(),
-    ),
-]).unwrap();
+    #[sea_orm::model]
+    #[derive(Clone, Debug, PartialEq, DeriveEntityModel)]
+    #[sea_orm(table_name = "measurement", arrow_schema)]
+    pub struct Model {
+        #[sea_orm(primary_key)]
+        pub id: i32,
+        pub recorded_at: ChronoDateTime,
+        pub sensor_id: i32,
+        pub temperature: f64,
+        #[sea_orm(column_type = "Decimal(Some((10, 4)))")]
+        pub voltage: Decimal,
+    }
 
-let mut insert = client.insert_arrow("my_table", &batch).await?;
+    impl ActiveModelBehavior for ActiveModel {}
+}
+
+let schema = measurement::Entity::arrow_schema();
+
+let models: Vec<measurement::ActiveModel> = (1..=100)
+    .map(|i| {
+        measurement::ActiveModel {
+            id: Set(i),
+            recorded_at: Set(timestamp),
+            sensor_id: Set(sensor_id),
+            temperature: Set(temperature),
+            voltage: Set(voltage),
+        }
+    })
+    .collect();
+
+let batch = measurement::ActiveModel::to_arrow(&models, &schema)?;
+
+let mut insert = client.insert_arrow("measurement", &batch).await?;
 insert.write_batch(&batch).await?;
 insert.end().await?;
 ```

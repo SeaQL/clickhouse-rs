@@ -45,7 +45,7 @@ async fn test_column_layout(client: &Client) -> Result<()> {
     Ok(())
 }
 
-/// Multiple batches: 10 rows with max_rows=4 → batches of 4, 4, 2.
+/// Multiple batches: 10 rows with max_rows=4 -> batches of 4, 4, 2.
 async fn test_multiple_batches(client: &Client) -> Result<()> {
     let mut cursor = client
         .query("SELECT number::UInt64 AS n FROM system.numbers LIMIT 10")

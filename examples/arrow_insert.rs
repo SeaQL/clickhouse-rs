@@ -23,8 +23,8 @@ use sea_query::prelude::{
 
 const TABLE: &str = "arrow_insert_example";
 
-// Decimal128(4): precision 38, scale 4  →  raw i128 unit = 0.0001
-// Decimal256(8): precision 76, scale 8  →  raw i256 unit = 0.00000001
+// Decimal128(4): precision 38, scale 4  ->  raw i128 unit = 0.0001
+// Decimal256(8): precision 76, scale 8  ->  raw i256 unit = 0.00000001
 const D128_SCALE: i8 = 4;
 const D256_SCALE: i8 = 8;
 

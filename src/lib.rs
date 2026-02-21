@@ -7,7 +7,7 @@ pub use self::{
 };
 #[cfg(feature = "sea-ql")]
 pub use self::{
-    data_row::{DataRow, RowBatch},
+    data_row::{ColumnIndex, DataRow, FromValue, RowBatch, TypeError},
     insert_data_row::DataRowInsert,
     query::DataRowCursor,
 };

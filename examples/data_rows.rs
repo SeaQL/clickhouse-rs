@@ -66,10 +66,10 @@ async fn test_types(client: &Client) -> Result<()> {
     );
     assert_eq!(values[7].to_string(), "123.45");
 
-    // Nullable null → typed null
+    // Nullable null -> typed null
     assert_eq!(values[8], Value::Int(None));
 
-    // Array(String) → Json array
+    // Array(String) -> Json array
     let expected_arr = serde_json::json!(["a", "b", "c"]);
     assert_eq!(values[9], Value::Json(Some(Box::new(expected_arr))));
 
@@ -149,15 +149,15 @@ async fn test_math_functions(client: &Client) -> Result<()> {
 
     let DataRow { columns: _, values } = &row;
 
-    // sqrt(UInt64) → Float64
+    // sqrt(UInt64) -> Float64
     assert_eq!(values[0], Value::Double(Some(3.0)));
-    // floor(Float64) → Float64
+    // floor(Float64) -> Float64
     assert_eq!(values[1], Value::Double(Some(3.0)));
-    // length(String) → UInt64
+    // length(String) -> UInt64
     assert_eq!(values[2], Value::BigUnsigned(Some(10)));
-    // upper(String) → String
+    // upper(String) -> String
     assert_eq!(values[3], Value::String(Some("HELLO".into())));
-    // toString(UInt32) → String
+    // toString(UInt32) -> String
     assert_eq!(values[4], Value::String(Some("42".into())));
 
     println!("test_math_functions: OK");
@@ -182,13 +182,13 @@ async fn test_date_functions(client: &Client) -> Result<()> {
 
     let DataRow { columns: _, values } = &row;
 
-    // toYear → UInt16
+    // toYear -> UInt16
     assert_eq!(values[0], Value::SmallUnsigned(Some(2024)));
-    // toMonth → UInt8
+    // toMonth -> UInt8
     assert_eq!(values[1], Value::TinyUnsigned(Some(6)));
-    // toDayOfMonth → UInt8
+    // toDayOfMonth -> UInt8
     assert_eq!(values[2], Value::TinyUnsigned(Some(15)));
-    // dateDiff('day', ...) → Int64
+    // dateDiff('day', ...) -> Int64
     assert_eq!(values[3], Value::BigInt(Some(14)));
 
     println!("test_date_functions: OK");
@@ -198,10 +198,10 @@ async fn test_date_functions(client: &Client) -> Result<()> {
 /// Arithmetic type promotion rules: result types are often wider than either operand.
 ///
 /// Key surprises:
-///   UInt8 + UInt16  → UInt32  (not UInt16!)
-///   UInt32 + Int32  → Int64   (mixed sign widens to next signed)
-///   Float32 + Float64 → Float64 (float64 wins)
-///   if(cond, UInt8, UInt8) → UInt8  (same type, no widening)
+///   UInt8 + UInt16  -> UInt32  (not UInt16!)
+///   UInt32 + Int32  -> Int64   (mixed sign widens to next signed)
+///   Float32 + Float64 -> Float64 (float64 wins)
+///   if(cond, UInt8, UInt8) -> UInt8  (same type, no widening)
 async fn test_type_promotion(client: &Client) -> Result<()> {
     let mut cursor = client
         .query(
@@ -220,16 +220,26 @@ async fn test_type_promotion(client: &Client) -> Result<()> {
 
     let DataRow { columns: _, values } = &row;
 
-    // UInt8 + UInt16 → UInt32 (ClickHouse promotes past UInt16)
+    // UInt8 + UInt16 -> UInt32 (ClickHouse promotes past UInt16)
     assert_eq!(values[0], Value::Unsigned(Some(2)));
-    // Float32 + Float64 → Float64
+    // Float32 + Float64 -> Float64
     assert_eq!(values[1], Value::Double(Some(2.0)));
-    // UInt32 + Int32 → Int64 (mixed sign → signed, widened)
+    // UInt32 + Int32 -> Int64 (mixed sign -> signed, widened)
     assert_eq!(values[2], Value::BigInt(Some(200)));
-    // if with same-type branches → that type
+    // if with same-type branches -> that type
     assert_eq!(values[3], Value::TinyUnsigned(Some(42)));
-    // if with string literals → String
+    // if with string literals -> String
     assert_eq!(values[4], Value::String(Some("no".into())));
+
+    assert_eq!(row.try_get::<i8, _>(0)?, 2);
+    assert_eq!(row.try_get::<u32, _>(0)?, 2);
+    assert_eq!(row.try_get::<u64, _>(0)?, 2);
+    assert_eq!(row.try_get::<f64, _>(0)?, 2.0);
+    assert_eq!(row.try_get::<f32, _>(1)?, 2f32);
+    assert_eq!(row.try_get::<f64, _>(1)?, 2.0);
+    assert_eq!(row.try_get::<Decimal, _>(0)?, 2.into());
+    assert_eq!(row.try_get::<Decimal, _>(1)?, 2.into());
+    assert_eq!(row.try_get::<String, _>("cond_str")?, "no".to_owned());
 
     println!("test_type_promotion: OK");
     Ok(())
@@ -250,11 +260,11 @@ async fn test_decimals(client: &Client) -> Result<()> {
 
     let DataRow { columns: _, values } = &row;
 
-    // Decimal128 → Decimal
+    // Decimal128 -> Decimal
     let expected: Decimal = "3.1415926535897932384626433833".parse().unwrap();
     assert_eq!(values[0], Value::Decimal(Some(expected)));
 
-    // Decimal256 → BigDecimal
+    // Decimal256 -> BigDecimal
     let expected: BigDecimal = "3.14159265358979323846264338327950288419716939937510"
         .parse()
         .unwrap();

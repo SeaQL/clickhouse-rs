@@ -90,7 +90,7 @@ fn datetime_from_ticks(ticks: i64, scale: i64) -> Result<NaiveDateTime> {
 
 /// Build a `BigDecimal` from an integer string and an explicit scale.
 ///
-/// E.g. `("12345", 2)` → `123.45`
+/// E.g. `("12345", 2)` -> `123.45`
 fn bigdecimal_with_scale(int_str: &str, scale: u8) -> Result<BigDecimal> {
     let bd = BigDecimal::from_str(int_str)
         .map_err(|e| Error::Custom(format!("BigDecimal parse error: {e}")))?;
@@ -134,7 +134,7 @@ fn typed_null(dt: &DataTypeNode) -> Value {
         DataTypeNode::IPv4 | DataTypeNode::IPv6 => Value::String(None),
         DataTypeNode::Enum(_, _) => Value::String(None),
         DataTypeNode::Interval(_) => Value::BigInt(None),
-        // Arrays, Maps, Tuples, JSON, geo types → null JSON
+        // Arrays, Maps, Tuples, JSON, geo types -> null JSON
         _ => Value::Json(None),
     }
 }
@@ -428,7 +428,7 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
             Ok(Value::BigInt(Some(v)))
         }
 
-        // ── Array → JSON array ────────────────────────────────────────────
+        // ── Array -> JSON array ────────────────────────────────────────────
         DataTypeNode::Array(inner) => {
             let count = read_leb128(input)?;
             let mut items = Vec::with_capacity(count);
@@ -438,7 +438,7 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
             Ok(Value::Json(Some(Box::new(serde_json::Value::Array(items)))))
         }
 
-        // ── Tuple → JSON array ────────────────────────────────────────────
+        // ── Tuple -> JSON array ────────────────────────────────────────────
         DataTypeNode::Tuple(elements) => {
             let mut arr = Vec::with_capacity(elements.len());
             for el in elements {
@@ -447,7 +447,7 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
             Ok(Value::Json(Some(Box::new(serde_json::Value::Array(arr)))))
         }
 
-        // ── Map → JSON object ─────────────────────────────────────────────
+        // ── Map -> JSON object ─────────────────────────────────────────────
         // RowBinary encodes Map as: LEB128 count, then interleaved k-v pairs.
         DataTypeNode::Map([key_type, val_type]) => {
             let count = read_leb128(input)?;
@@ -475,7 +475,7 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
             Ok(Value::Json(Some(Box::new(json))))
         }
 
-        // ── Geo types → JSON ──────────────────────────────────────────────
+        // ── Geo types -> JSON ──────────────────────────────────────────────
         DataTypeNode::Point => {
             let b = read_bytes(input, 16)?;
             let x = f64::from_le_bytes(b[0..8].try_into().unwrap());

@@ -31,7 +31,7 @@ sea-clickhouse = { version = "0.14", features = ["arrow"] }
 
 ## Dynamic DataRow
 
-`fetch_rows()` decodes every column into the matching `sea_query::Value` variant —
+`fetch_rows()` decodes every column into the matching `sea_query::Value` variant:
 integers, floats, strings, booleans, dates, decimals, arrays - all without a schema struct.
 
 ```rust
@@ -80,9 +80,26 @@ assert_eq!(
     Value::BigDecimal(Some(Box::new("3.14159265358979".parse::<BigDecimal>().unwrap())))
 );
 assert_eq!(values[7], Value::Int(None)); // Nullable value -> typed None
-// Array(String) → Json array
+// Array(String) -> Json array
 let expected_arr = serde_json::json!(["a", "b", "c"]);
 assert_eq!(values[8], Value::Json(Some(Box::new(expected_arr))));
+```
+
+## No-fuzz Dynamic Type
+
+No need to guess the resulting type of a SQL expression, it can be converted to the desired type on runtime:
+
+```rust
+let mut cursor = client
+    .query("SELECT 1::UInt32 + 1::Float32 AS value") // what's the output type?
+    .fetch_rows()?;
+
+let row = cursor.next().await?.expect("expected one row");
+
+// UInt32 + Float32 -> Float64
+assert_eq!(row.try_get::<f64, _>(0)?, 2.0); // designated type
+assert_eq!(row.try_get::<f32, _>(0)?, 2.0); // also works
+assert_eq!(row.try_get::<Decimal, _>("value")?, 2.into()); // also works
 ```
 
 ## Insert DataRows
@@ -134,7 +151,7 @@ while let Some(batch) = cursor.next_batch(256).await? {
 
 ## Apache Arrow
 
-`next_arrow_batch(chunk_size)` streams ClickHouse results as `arrow::RecordBatch`es —
+`next_arrow_batch(chunk_size)` streams ClickHouse results as `arrow::RecordBatch`es -
 ready for DataFusion, Polars, Parquet export, or any Arrow consumer.
 
 ```rust
@@ -256,3 +273,9 @@ for inclusion in the work by you, as defined in the Apache-2.0 license, shall be
 dual licensed as above, without any additional terms or conditions.
 
 We invite you to participate, contribute and together help build Rust's future.
+
+## Mascot
+
+A friend of Ferris, Terres the hermit crab is the official mascot of SeaORM. His hobby is collecting shells.
+
+<img alt="Terres" src="https://www.sea-ql.org/SeaORM/img/Terres.png" width="400"/>

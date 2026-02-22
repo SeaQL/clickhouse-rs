@@ -1,11 +1,10 @@
 [package]
 name = "sea-clickhouse"
-version = "0.14.2"
+version = "0.14.3"
 description = "ClickHouse Client with SeaQL integration"
 keywords = ["clickhouse", "database"]
 readme = "README.md"
 authors.workspace = true
-homepage.workspace = true
 repository.workspace = true
 license.workspace = true
 edition.workspace = true

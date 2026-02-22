@@ -1,11 +1,11 @@
-# Clickhouse for SeaQL + Arrow
+# Clickhouse for SeaQL
 
 A ClickHouse client that integrates with the [SeaQL](https://github.com/SeaQL/sea-orm/) ecosystem.
 Query results are decoded into `sea_query::Value`, giving you first-class support for
-`chrono` datetimes, `rust_decimal::Decimal`, `bigdecimal::BigDecimal`, UUIDs, JSON arrays,
+`DateTime`, `Decimal`, `BigDecimal`, `Json` arrays,
 and more - without defining any schema structs.
 
-Apache Arrow is also supported: stream query results directly into `RecordBatch`es, or insert
+[Apache Arrow](https://docs.rs/arrow/latest/arrow/) is also supported: stream query results directly into `RecordBatch`es, or insert
 Arrow batches back into ClickHouse.
 
 This is a soft fork of [clickhouse.rs](https://github.com/ClickHouse/clickhouse-rs), 100% compatible with all upstream features, and continually rebased on upstream.
@@ -14,7 +14,7 @@ This is a soft fork of [clickhouse.rs](https://github.com/ClickHouse/clickhouse-
 
 - **Dynamic rows** - fetch results as `Vec<DataRow>` with no compile-time schema
 - **SeaQuery values** - every column maps to a typed `sea_query::Value` variant
-- **Rich types** - `chrono` dates/datetimes, `Decimal`, `BigDecimal`, `Uuid`, JSON
+- **Rich types** - `Date`, `Time`, `DateTime`, `Decimal`, `BigDecimal`, `Json`
 - **Column-oriented batches** - `next_batch(n)` streams rows in column-major `RowBatch`es
 - **Apache Arrow** - stream query results as `RecordBatch`es; insert Arrow batches directly
 
@@ -98,8 +98,8 @@ let row = cursor.next().await?.expect("expected one row");
 
 // UInt32 + Float32 -> Float64
 assert_eq!(row.try_get::<f64, _>(0)?, 2.0); // designated type
-assert_eq!(row.try_get::<f32, _>(0)?, 2.0); // also works
-assert_eq!(row.try_get::<Decimal, _>("value")?, 2.into()); // also works
+assert_eq!(row.try_get::<f32, _>(0)?, 2.0); // get by index, also works
+assert_eq!(row.try_get::<Decimal, _>("value")?, 2.into()); // get by column name, also works
 ```
 
 ## Insert DataRows

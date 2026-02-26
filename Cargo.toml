@@ -178,7 +178,6 @@ uuid = { version = "1", optional = true }
 time = { version = "0.3", optional = true }
 chrono = { version = "0.4", optional = true, features = ["serde"] }
 sea-query = { version = "1.0.0-rc", optional = true, default-features = false, features = [
-    "postgres-array",
     "with-bigdecimal",
     "with-json",
     "with-rust_decimal",

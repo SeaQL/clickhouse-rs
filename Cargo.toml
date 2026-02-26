@@ -22,6 +22,7 @@ resolver = "3"
 
 [workspace.package]
 authors = ["ClickHouse Contributors", "Paul Loyd <pavelko95@gmail.com>"]
+homepage = "https://github.com/SeaQL/clickhouse-rs"
 repository = "https://github.com/SeaQL/clickhouse-rs"
 edition = "2024"
 license = "MIT OR Apache-2.0"
@@ -118,10 +119,10 @@ default = ["lz4"]
 
 test-util = ["hyper/server"]
 inserter = ["dep:quanta"]
-uuid = ["dep:uuid"]
-time = ["dep:time"]
+uuid = ["dep:uuid", "sea-query?/with-uuid"]
+time = ["dep:time", "sea-query?/with-time", "sea-orm-arrow?/with-time"]
 lz4 = ["dep:lz4_flex", "dep:cityhash-rs"]
-chrono = ["dep:chrono"]
+chrono = ["dep:chrono", "sea-query?/with-chrono", "sea-orm-arrow?/with-chrono"]
 futures03 = []
 sea-ql = ["sea-query"]
 arrow = ["sea-orm-arrow", "sea-ql"]
@@ -179,18 +180,13 @@ chrono = { version = "0.4", optional = true, features = ["serde"] }
 sea-query = { version = "1.0.0-rc", optional = true, default-features = false, features = [
     "postgres-array",
     "with-bigdecimal",
-    "with-chrono",
     "with-json",
     "with-rust_decimal",
-    "with-time",
-    "with-uuid",
 ] }
 sea-orm-arrow = { version = "2.0.0-rc", optional = true, features = [
     "prettyprint",
     "with-bigdecimal",
-    "with-chrono",
     "with-rust_decimal",
-    "with-time",
 ] }
 bstr = { version = "1.11.0", default-features = false }
 quanta = { version = "0.12", optional = true }

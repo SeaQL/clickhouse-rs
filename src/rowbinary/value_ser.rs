@@ -1,11 +1,17 @@
 use crate::data_row::DataRow;
 use crate::error::{Error, Result};
 use bytes::BufMut;
-use clickhouse_types::data_types::{DateTimePrecision, DecimalType, EnumType};
+#[cfg(any(feature = "chrono", feature = "time"))]
+use clickhouse_types::data_types::DateTimePrecision;
+use clickhouse_types::data_types::{DecimalType, EnumType};
 use clickhouse_types::put_leb128;
 use clickhouse_types::{Column, DataTypeNode};
 use sea_query::Value;
-use sea_query::value::prelude::{Decimal, NaiveDate, NaiveDateTime, NaiveTime, Uuid};
+use sea_query::value::prelude::Decimal;
+#[cfg(feature = "uuid")]
+use sea_query::value::prelude::Uuid;
+#[cfg(feature = "chrono")]
+use sea_query::value::prelude::{NaiveDate, NaiveDateTime, NaiveTime};
 
 /// Serialize a [`DataRow`] into the RowBinary format.
 ///
@@ -43,7 +49,8 @@ pub(crate) fn serialize_data_row<B: BufMut>(
 }
 
 fn is_null(val: &Value) -> bool {
-    matches!(
+    #[allow(unused_mut)]
+    let mut null = matches!(
         val,
         Value::Bool(None)
             | Value::TinyInt(None)
@@ -61,12 +68,29 @@ fn is_null(val: &Value) -> bool {
             | Value::Bytes(None)
             | Value::BigDecimal(None)
             | Value::Decimal(None)
-            | Value::ChronoDate(None)
-            | Value::ChronoDateTime(None)
-            | Value::ChronoTime(None)
-            | Value::Uuid(None)
             | Value::Json(None)
-    )
+    );
+    #[cfg(feature = "chrono")]
+    {
+        null = null
+            || matches!(
+                val,
+                Value::ChronoDate(None) | Value::ChronoDateTime(None) | Value::ChronoTime(None)
+            );
+    }
+    #[cfg(feature = "time")]
+    {
+        null = null
+            || matches!(
+                val,
+                Value::TimeDate(None) | Value::TimeDateTime(None) | Value::TimeTime(None)
+            );
+    }
+    #[cfg(feature = "uuid")]
+    {
+        null = null || matches!(val, Value::Uuid(None));
+    }
+    null
 }
 
 fn serialize_typed<B: BufMut>(buf: &mut B, val: &Value, dt: &DataTypeNode) -> Result<()> {
@@ -154,63 +178,157 @@ fn serialize_typed<B: BufMut>(buf: &mut B, val: &Value, dt: &DataTypeNode) -> Re
             _ => Err(type_mismatch("FixedString", val)),
         },
 
+        #[cfg(feature = "uuid")]
         DataTypeNode::UUID => match val {
             Value::Uuid(Some(uuid)) => Ok(encode_uuid(buf, uuid)),
             _ => Err(type_mismatch("UUID", val)),
         },
+        #[cfg(not(feature = "uuid"))]
+        DataTypeNode::UUID => Err(Error::Unsupported(
+            "UUID serialization requires the `uuid` feature".into(),
+        )),
 
+        #[cfg(feature = "chrono")]
         DataTypeNode::Date => match val {
             Value::ChronoDate(Some(d)) => {
-                buf.put_u16_le(days_from_unix_epoch(d) as u16);
+                buf.put_u16_le(chrono_days_from_unix_epoch(d) as u16);
                 Ok(())
             }
             _ => Err(type_mismatch("Date", val)),
         },
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Date => match val {
+            Value::TimeDate(Some(d)) => {
+                buf.put_u16_le(time_days_from_unix_epoch(d) as u16);
+                Ok(())
+            }
+            _ => Err(type_mismatch("Date", val)),
+        },
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Date => Err(Error::Unsupported(
+            "Date serialization requires the `chrono` or `time` feature".into(),
+        )),
+
+        #[cfg(feature = "chrono")]
         DataTypeNode::Date32 => match val {
             Value::ChronoDate(Some(d)) => {
-                buf.put_i32_le(days_from_unix_epoch(d));
+                buf.put_i32_le(chrono_days_from_unix_epoch(d));
                 Ok(())
             }
             _ => Err(type_mismatch("Date32", val)),
         },
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Date32 => match val {
+            Value::TimeDate(Some(d)) => {
+                buf.put_i32_le(time_days_from_unix_epoch(d));
+                Ok(())
+            }
+            _ => Err(type_mismatch("Date32", val)),
+        },
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Date32 => Err(Error::Unsupported(
+            "Date32 serialization requires the `chrono` or `time` feature".into(),
+        )),
 
+        #[cfg(feature = "chrono")]
         DataTypeNode::DateTime(_tz) => match val {
             Value::ChronoDateTime(Some(dt)) => {
-                buf.put_u32_le(datetime_timestamp(dt) as u32);
+                buf.put_u32_le(chrono_datetime_timestamp(dt) as u32);
                 Ok(())
             }
             _ => Err(type_mismatch("DateTime", val)),
         },
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::DateTime(_tz) => match val {
+            Value::TimeDateTime(Some(dt)) => {
+                buf.put_u32_le(time_datetime_timestamp(dt) as u32);
+                Ok(())
+            }
+            _ => Err(type_mismatch("DateTime", val)),
+        },
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::DateTime(_tz) => Err(Error::Unsupported(
+            "DateTime serialization requires the `chrono` or `time` feature".into(),
+        )),
+
+        #[cfg(feature = "chrono")]
         DataTypeNode::DateTime64(prec, _tz) => match val {
             Value::ChronoDateTime(Some(dt)) => {
                 let scale = precision_scale(prec);
-                let secs = datetime_timestamp(dt);
-                let subsec_nanos = datetime_subsec_nanos(dt) as i64;
+                let secs = chrono_datetime_timestamp(dt);
+                let subsec_nanos = chrono_datetime_subsec_nanos(dt) as i64;
                 let ticks = secs * scale + subsec_nanos / (1_000_000_000 / scale);
                 buf.put_i64_le(ticks);
                 Ok(())
             }
             _ => Err(type_mismatch("DateTime64", val)),
         },
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::DateTime64(prec, _tz) => match val {
+            Value::TimeDateTime(Some(dt)) => {
+                let scale = precision_scale(prec);
+                let secs = time_datetime_timestamp(dt);
+                let subsec_nanos = time_datetime_subsec_nanos(dt) as i64;
+                let ticks = secs * scale + subsec_nanos / (1_000_000_000 / scale);
+                buf.put_i64_le(ticks);
+                Ok(())
+            }
+            _ => Err(type_mismatch("DateTime64", val)),
+        },
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::DateTime64(_prec, _tz) => Err(Error::Unsupported(
+            "DateTime64 serialization requires the `chrono` or `time` feature".into(),
+        )),
 
+        #[cfg(feature = "chrono")]
         DataTypeNode::Time => match val {
             Value::ChronoTime(Some(t)) => {
-                buf.put_i32_le(time_secs(t));
+                buf.put_i32_le(chrono_time_secs(t));
                 Ok(())
             }
             _ => Err(type_mismatch("Time", val)),
         },
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Time => match val {
+            Value::TimeTime(Some(t)) => {
+                buf.put_i32_le(time_time_secs(t));
+                Ok(())
+            }
+            _ => Err(type_mismatch("Time", val)),
+        },
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Time => Err(Error::Unsupported(
+            "Time serialization requires the `chrono` or `time` feature".into(),
+        )),
+
+        #[cfg(feature = "chrono")]
         DataTypeNode::Time64(prec) => match val {
             Value::ChronoTime(Some(t)) => {
                 let scale = precision_scale(prec);
-                let secs = time_secs(t) as i64;
-                let nanos = time_subsec_nanos(t) as i64;
+                let secs = chrono_time_secs(t) as i64;
+                let nanos = chrono_time_subsec_nanos(t) as i64;
                 let ticks = secs * scale + nanos / (1_000_000_000 / scale);
                 buf.put_i64_le(ticks);
                 Ok(())
             }
             _ => Err(type_mismatch("Time64", val)),
         },
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Time64(prec) => match val {
+            Value::TimeTime(Some(t)) => {
+                let scale = precision_scale(prec);
+                let secs = time_time_secs(t) as i64;
+                let nanos = time_time_subsec_nanos(t) as i64;
+                let ticks = secs * scale + nanos / (1_000_000_000 / scale);
+                buf.put_i64_le(ticks);
+                Ok(())
+            }
+            _ => Err(type_mismatch("Time64", val)),
+        },
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Time64(_prec) => Err(Error::Unsupported(
+            "Time64 serialization requires the `chrono` or `time` feature".into(),
+        )),
 
         DataTypeNode::Decimal(_, scale, DecimalType::Decimal32) => match val {
             Value::Decimal(Some(d)) => {
@@ -239,7 +357,6 @@ fn serialize_typed<B: BufMut>(buf: &mut B, val: &Value, dt: &DataTypeNode) -> Re
             let le32 = match val {
                 Value::Decimal(Some(d)) => {
                     let raw = decimal_to_raw_i128(d, *scale);
-                    // Sign-extend i128 to 32 LE bytes.
                     let mut b = [if raw < 0 { 0xffu8 } else { 0u8 }; 32];
                     b[..16].copy_from_slice(&raw.to_le_bytes());
                     b
@@ -293,7 +410,6 @@ fn serialize_typed<B: BufMut>(buf: &mut B, val: &Value, dt: &DataTypeNode) -> Re
             _ => Err(type_mismatch("Enum", val)),
         },
 
-        // Array, Tuple, Map, JSON — stored as LEB128-length-prefixed JSON on the wire.
         DataTypeNode::Array(_)
         | DataTypeNode::Tuple(_)
         | DataTypeNode::Map(_)
@@ -379,6 +495,7 @@ fn serialize_untyped<B: BufMut>(buf: &mut B, val: &Value) -> Result<()> {
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+#[cfg(any(feature = "chrono", feature = "time"))]
 fn precision_scale(p: &DateTimePrecision) -> i64 {
     match p {
         DateTimePrecision::Precision0 => 1,
@@ -394,38 +511,78 @@ fn precision_scale(p: &DateTimePrecision) -> i64 {
     }
 }
 
+#[cfg(feature = "uuid")]
 fn encode_uuid<B: BufMut>(buf: &mut B, uuid: &Uuid) {
-    // ClickHouse stores UUID as two little-endian u64 values (high, then low).
     let bits = uuid.as_u128();
     buf.put_u64_le((bits >> 64) as u64);
     buf.put_u64_le(bits as u64);
 }
 
-fn days_from_unix_epoch(d: &NaiveDate) -> i32 {
+// ── chrono helpers ───────────────────────────────────────────────────────────
+
+#[cfg(feature = "chrono")]
+fn chrono_days_from_unix_epoch(d: &NaiveDate) -> i32 {
     let unix_epoch = NaiveDate::from_ymd_opt(1970, 1, 1).expect("valid date");
     d.signed_duration_since(unix_epoch).num_days() as i32
 }
 
-fn datetime_timestamp(dt: &NaiveDateTime) -> i64 {
+#[cfg(feature = "chrono")]
+fn chrono_datetime_timestamp(dt: &NaiveDateTime) -> i64 {
     dt.and_utc().timestamp()
 }
 
-fn datetime_subsec_nanos(dt: &NaiveDateTime) -> u32 {
+#[cfg(feature = "chrono")]
+fn chrono_datetime_subsec_nanos(dt: &NaiveDateTime) -> u32 {
     dt.and_utc().timestamp_subsec_nanos()
 }
 
-fn time_secs(t: &NaiveTime) -> i32 {
+#[cfg(feature = "chrono")]
+fn chrono_time_secs(t: &NaiveTime) -> i32 {
     let midnight = NaiveTime::from_hms_opt(0, 0, 0).expect("valid time");
     t.signed_duration_since(midnight).num_seconds() as i32
 }
 
-fn time_subsec_nanos(t: &NaiveTime) -> u32 {
+#[cfg(feature = "chrono")]
+fn chrono_time_subsec_nanos(t: &NaiveTime) -> u32 {
     let midnight = NaiveTime::from_hms_opt(0, 0, 0).expect("valid time");
     let dur = t.signed_duration_since(midnight);
     let total_nanos = dur.num_nanoseconds().unwrap_or(0);
     let secs_nanos = dur.num_seconds() * 1_000_000_000;
     (total_nanos - secs_nanos) as u32
 }
+
+// ── time helpers ─────────────────────────────────────────────────────────────
+
+/// Julian day of the Unix epoch (1970-01-01).
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+const UNIX_EPOCH_JULIAN_DAY: i32 = 2_440_588;
+
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+fn time_days_from_unix_epoch(d: &sea_query::value::prelude::time::Date) -> i32 {
+    d.to_julian_day() - UNIX_EPOCH_JULIAN_DAY
+}
+
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+fn time_datetime_timestamp(dt: &sea_query::value::prelude::PrimitiveDateTime) -> i64 {
+    dt.assume_utc().unix_timestamp()
+}
+
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+fn time_datetime_subsec_nanos(dt: &sea_query::value::prelude::PrimitiveDateTime) -> u32 {
+    dt.nanosecond()
+}
+
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+fn time_time_secs(t: &sea_query::value::prelude::time::Time) -> i32 {
+    (t.hour() as i32) * 3600 + (t.minute() as i32) * 60 + t.second() as i32
+}
+
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+fn time_time_subsec_nanos(t: &sea_query::value::prelude::time::Time) -> u32 {
+    t.nanosecond()
+}
+
+// ── decimal helpers ──────────────────────────────────────────────────────────
 
 fn decimal_to_raw_i64(d: &Decimal, target_scale: u8) -> i64 {
     let mantissa = d.mantissa();
@@ -456,8 +613,6 @@ fn bigdecimal_to_raw_i128(d: &sea_query::prelude::BigDecimal, target_scale: u8) 
         .ok_or_else(|| Error::Custom(format!("Decimal128: value out of i128 range")))
 }
 
-/// Converts a [`BigDecimal`] to a 32-byte little-endian two's-complement
-/// representation suitable for ClickHouse `Decimal256` columns.
 fn bigdecimal_to_raw_le256(
     d: &sea_query::prelude::BigDecimal,
     target_scale: u8,
@@ -471,7 +626,6 @@ fn bigdecimal_to_raw_le256(
             "Decimal256: value exceeds 256-bit range".into(),
         ));
     }
-    // Build big-endian 32-byte unsigned magnitude, then two's-complement negate if negative.
     let mut be = [0u8; 32];
     let start = 32 - magnitude.len();
     be[start..].copy_from_slice(&magnitude);
@@ -489,7 +643,6 @@ fn bigdecimal_to_raw_le256(
             }
         }
     }
-    // ClickHouse RowBinary is little-endian.
     be.reverse();
     Ok(be)
 }

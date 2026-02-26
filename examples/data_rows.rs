@@ -2,13 +2,13 @@
 //! without any compile-time struct definition.
 //!
 //! Run with:
-//!   cargo run --example data_rows --features sea-ql
+//!   cargo run --example data_rows --features sea-ql              # no date/time
+//!   cargo run --example data_rows --features sea-ql,chrono       # chrono date/time
+//!   cargo run --example data_rows --features sea-ql,time         # time date/time
 
 use clickhouse::{Client, DataRow, error::Result};
 use sea_query::Value;
-use sea_query::value::prelude::{
-    BigDecimal, Decimal, NaiveDate, NaiveDateTime, NaiveTime, serde_json,
-};
+use sea_query::value::prelude::{BigDecimal, Decimal, serde_json};
 
 async fn test_types(client: &Client) -> Result<()> {
     let mut cursor = client
@@ -19,8 +19,6 @@ async fn test_types(client: &Client) -> Result<()> {
                 3.14::Float64                            AS f64_col,
                 'hello'::String                          AS str_col,
                 true::Bool                               AS bool_col,
-                toDate('2024-01-15')                     AS date_col,
-                toDateTime('2024-01-15 12:34:56')        AS dt_col,
                 toDecimal64(123.45, 2)                   AS dec_col,
                 NULL::Nullable(Int32)                    AS null_col,
                 ['a', 'b', 'c']::Array(String)           AS arr_col
@@ -33,13 +31,11 @@ async fn test_types(client: &Client) -> Result<()> {
 
     let DataRow { columns, values } = &row;
 
-    // Column names
     let col_names: Vec<&str> = columns.iter().map(|c| c.as_ref()).collect();
     assert_eq!(
         col_names,
         [
-            "u8_col", "i32_col", "f64_col", "str_col", "bool_col", "date_col", "dt_col", "dec_col",
-            "null_col", "arr_col"
+            "u8_col", "i32_col", "f64_col", "str_col", "bool_col", "dec_col", "null_col", "arr_col"
         ]
     );
 
@@ -51,33 +47,84 @@ async fn test_types(client: &Client) -> Result<()> {
 
     assert_eq!(
         values[5],
-        Value::ChronoDate(Some(NaiveDate::from_ymd_opt(2024, 1, 15).unwrap()))
-    );
-    assert_eq!(
-        values[6],
-        Value::ChronoDateTime(Some(NaiveDateTime::new(
-            NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
-            NaiveTime::from_hms_opt(12, 34, 56).unwrap(),
-        )))
-    );
-    assert_eq!(
-        values[7],
         Value::Decimal(Some(Decimal::from_i128_with_scale(12345, 2)))
     );
-    assert_eq!(values[7].to_string(), "123.45");
+    assert_eq!(values[5].to_string(), "123.45");
 
-    // Nullable null -> typed null
-    assert_eq!(values[8], Value::Int(None));
+    assert_eq!(values[6], Value::Int(None));
 
-    // Array(String) -> Json array
     let expected_arr = serde_json::json!(["a", "b", "c"]);
-    assert_eq!(values[9], Value::Json(Some(Box::new(expected_arr))));
+    assert_eq!(values[7], Value::Json(Some(Box::new(expected_arr))));
 
     for value in values {
         println!("{value:?}");
     }
 
     println!("test_types: OK");
+    Ok(())
+}
+
+#[cfg(feature = "chrono")]
+async fn test_chrono_types(client: &Client) -> Result<()> {
+    use sea_query::value::prelude::{NaiveDate, NaiveDateTime, NaiveTime};
+
+    let mut cursor = client
+        .query(
+            "SELECT
+                toDate('2024-01-15')                     AS date_col,
+                toDateTime('2024-01-15 12:34:56')        AS dt_col
+            ",
+        )
+        .fetch_rows()?;
+
+    let row = cursor.next().await?.expect("expected one row");
+    assert!(cursor.next().await?.is_none(), "expected exactly one row");
+
+    let DataRow { columns: _, values } = &row;
+
+    assert_eq!(
+        values[0],
+        Value::ChronoDate(Some(NaiveDate::from_ymd_opt(2024, 1, 15).unwrap()))
+    );
+    assert_eq!(
+        values[1],
+        Value::ChronoDateTime(Some(NaiveDateTime::new(
+            NaiveDate::from_ymd_opt(2024, 1, 15).unwrap(),
+            NaiveTime::from_hms_opt(12, 34, 56).unwrap(),
+        )))
+    );
+
+    println!("test_chrono_types: OK");
+    Ok(())
+}
+
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+async fn test_time_types(client: &Client) -> Result<()> {
+    use sea_query::value::prelude::{PrimitiveDateTime, time};
+
+    let mut cursor = client
+        .query(
+            "SELECT
+                toDate('2024-01-15')                     AS date_col,
+                toDateTime('2024-01-15 12:34:56')        AS dt_col
+            ",
+        )
+        .fetch_rows()?;
+
+    let row = cursor.next().await?.expect("expected one row");
+    assert!(cursor.next().await?.is_none(), "expected exactly one row");
+
+    let DataRow { columns: _, values } = &row;
+
+    let expected_date =
+        time::Date::from_calendar_date(2024, time::Month::January, 15).expect("valid date");
+    assert_eq!(values[0], Value::TimeDate(Some(expected_date)));
+
+    let expected_time = time::Time::from_hms(12, 34, 56).expect("valid time");
+    let expected_dt = PrimitiveDateTime::new(expected_date, expected_time);
+    assert_eq!(values[1], Value::TimeDateTime(Some(expected_dt)));
+
+    println!("test_time_types: OK");
     Ok(())
 }
 
@@ -164,7 +211,8 @@ async fn test_math_functions(client: &Client) -> Result<()> {
     Ok(())
 }
 
-/// Date extraction functions whose return types are narrower unsigned integers.
+/// Date extraction functions return narrower unsigned integers -- no date/time
+/// feature needed since the *results* are plain integers / strings.
 async fn test_date_functions(client: &Client) -> Result<()> {
     let mut cursor = client
         .query(
@@ -297,6 +345,12 @@ async fn main() -> Result<()> {
     test_date_functions(&client).await?;
     test_type_promotion(&client).await?;
     test_decimals(&client).await?;
+
+    #[cfg(feature = "chrono")]
+    test_chrono_types(&client).await?;
+
+    #[cfg(all(feature = "time", not(feature = "chrono")))]
+    test_time_types(&client).await?;
 
     println!("All tests OK");
     Ok(())

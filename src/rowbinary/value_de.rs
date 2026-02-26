@@ -1,15 +1,24 @@
 use crate::error::{Error, Result};
 use crate::types::{Int256, UInt256};
 use clickhouse_types::DataTypeNode;
-use clickhouse_types::data_types::{DateTimePrecision, DecimalType, EnumType};
+#[cfg(any(feature = "chrono", feature = "time"))]
+use clickhouse_types::data_types::DateTimePrecision;
+use clickhouse_types::data_types::{DecimalType, EnumType};
 use sea_query::Value;
-use sea_query::value::prelude::{
-    BigDecimal, Decimal, NaiveDate, NaiveDateTime, NaiveTime, Uuid, serde_json,
-};
+#[cfg(feature = "uuid")]
+use sea_query::value::prelude::Uuid;
+use sea_query::value::prelude::{BigDecimal, Decimal, serde_json};
+#[cfg(feature = "chrono")]
+use sea_query::value::prelude::{NaiveDate, NaiveDateTime, NaiveTime};
 use std::str::FromStr;
 
 // Days from the chrono CE epoch (0001-01-01) to the Unix epoch (1970-01-01).
+#[cfg(any(feature = "chrono", feature = "time"))]
 const UNIX_EPOCH_DAYS_FROM_CE: i32 = 719_163;
+
+// Julian day for the chrono CE epoch day-1 (so julian = ce_days + this offset).
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+const CE_DAYS_TO_JULIAN_OFFSET: i32 = 1_721_425;
 
 // ── public entry point ───────────────────────────────────────────────────────
 
@@ -56,6 +65,7 @@ fn read_leb128(input: &mut &[u8]) -> Result<usize> {
     usize::try_from(value).map_err(|_| Error::NotEnoughData)
 }
 
+#[cfg(any(feature = "chrono", feature = "time"))]
 fn precision_scale(p: &DateTimePrecision) -> i64 {
     match p {
         DateTimePrecision::Precision0 => 1,
@@ -71,6 +81,7 @@ fn precision_scale(p: &DateTimePrecision) -> i64 {
     }
 }
 
+#[cfg(feature = "chrono")]
 fn datetime_from_ticks(ticks: i64, scale: i64) -> Result<NaiveDateTime> {
     let total_secs = ticks.div_euclid(scale);
     let sub = ticks.rem_euclid(scale);
@@ -88,6 +99,41 @@ fn datetime_from_ticks(ticks: i64, scale: i64) -> Result<NaiveDateTime> {
     Ok(NaiveDateTime::new(date, time))
 }
 
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+fn datetime_from_ticks_time(
+    ticks: i64,
+    scale: i64,
+) -> Result<sea_query::value::prelude::PrimitiveDateTime> {
+    let total_secs = ticks.div_euclid(scale);
+    let sub = ticks.rem_euclid(scale);
+    let nsecs = (sub * (1_000_000_000 / scale)) as u32;
+
+    let day_secs = total_secs.rem_euclid(86_400) as u32;
+    let days = total_secs.div_euclid(86_400);
+    let days_from_ce = i32::try_from(days + UNIX_EPOCH_DAYS_FROM_CE as i64)
+        .map_err(|_| Error::Custom("DateTime64 out of i32 range".to_string()))?;
+
+    let julian_day = days_from_ce + CE_DAYS_TO_JULIAN_OFFSET;
+    let date = sea_query::value::prelude::time::Date::from_julian_day(julian_day)
+        .map_err(|_| Error::Custom("DateTime64 date out of range".to_string()))?;
+    let time = time_from_day_secs_nanos(day_secs, nsecs)?;
+    Ok(sea_query::value::prelude::PrimitiveDateTime::new(
+        date, time,
+    ))
+}
+
+#[cfg(all(feature = "time", not(feature = "chrono")))]
+fn time_from_day_secs_nanos(
+    secs: u32,
+    nanos: u32,
+) -> Result<sea_query::value::prelude::time::Time> {
+    let h = (secs / 3600) as u8;
+    let m = ((secs % 3600) / 60) as u8;
+    let s = (secs % 60) as u8;
+    sea_query::value::prelude::time::Time::from_hms_nano(h, m, s, nanos)
+        .map_err(|_| Error::Custom("time out of range".to_string()))
+}
+
 /// Build a `BigDecimal` from an integer string and an explicit scale.
 ///
 /// E.g. `("12345", 2)` -> `123.45`
@@ -101,10 +147,10 @@ fn bigdecimal_with_scale(int_str: &str, scale: u8) -> Result<BigDecimal> {
 // ── typed null ───────────────────────────────────────────────────────────────
 
 /// Return the appropriate "None" variant for a given type.
-fn typed_null(dt: &DataTypeNode) -> Value {
+fn typed_null(dt: &DataTypeNode) -> Result<Value> {
     let dt = dt.remove_low_cardinality();
-    match dt {
-        DataTypeNode::Nullable(inner) => typed_null(inner),
+    Ok(match dt {
+        DataTypeNode::Nullable(inner) => return typed_null(inner),
         DataTypeNode::Bool => Value::Bool(None),
         DataTypeNode::Int8 => Value::TinyInt(None),
         DataTypeNode::Int16 => Value::SmallInt(None),
@@ -120,10 +166,49 @@ fn typed_null(dt: &DataTypeNode) -> Value {
         DataTypeNode::Float64 => Value::Double(None),
         DataTypeNode::String => Value::String(None),
         DataTypeNode::FixedString(_) => Value::Bytes(None),
+
+        #[cfg(feature = "uuid")]
         DataTypeNode::UUID => Value::Uuid(None),
+        #[cfg(not(feature = "uuid"))]
+        DataTypeNode::UUID => {
+            return Err(Error::Unsupported(
+                "UUID requires the `uuid` feature".into(),
+            ));
+        }
+
+        #[cfg(feature = "chrono")]
         DataTypeNode::Date | DataTypeNode::Date32 => Value::ChronoDate(None),
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Date | DataTypeNode::Date32 => Value::TimeDate(None),
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Date | DataTypeNode::Date32 => {
+            return Err(Error::Unsupported(
+                "Date requires the `chrono` or `time` feature".into(),
+            ));
+        }
+
+        #[cfg(feature = "chrono")]
         DataTypeNode::DateTime(_) | DataTypeNode::DateTime64(_, _) => Value::ChronoDateTime(None),
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::DateTime(_) | DataTypeNode::DateTime64(_, _) => Value::TimeDateTime(None),
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::DateTime(_) | DataTypeNode::DateTime64(_, _) => {
+            return Err(Error::Unsupported(
+                "DateTime requires the `chrono` or `time` feature".into(),
+            ));
+        }
+
+        #[cfg(feature = "chrono")]
         DataTypeNode::Time | DataTypeNode::Time64(_) => Value::ChronoTime(None),
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Time | DataTypeNode::Time64(_) => Value::TimeTime(None),
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Time | DataTypeNode::Time64(_) => {
+            return Err(Error::Unsupported(
+                "Time requires the `chrono` or `time` feature".into(),
+            ));
+        }
+
         DataTypeNode::Decimal(_, _, DecimalType::Decimal32)
         | DataTypeNode::Decimal(_, _, DecimalType::Decimal64) => Value::Decimal(None),
         DataTypeNode::Decimal(_, scale, DecimalType::Decimal128) if *scale <= 28 => {
@@ -136,7 +221,7 @@ fn typed_null(dt: &DataTypeNode) -> Value {
         DataTypeNode::Interval(_) => Value::BigInt(None),
         // Arrays, Maps, Tuples, JSON, geo types -> null JSON
         _ => Value::Json(None),
-    }
+    })
 }
 
 // ── value_to_json helper for Array / Tuple / Map ─────────────────────────────
@@ -158,9 +243,19 @@ fn value_to_json(v: Value) -> serde_json::Value {
         Value::Bytes(Some(b)) => serde_json::json!(b),
         Value::BigDecimal(Some(bd)) => serde_json::Value::String(bd.to_string()),
         Value::Decimal(Some(d)) => serde_json::Value::String(d.to_string()),
+        #[cfg(feature = "chrono")]
         Value::ChronoDate(Some(d)) => serde_json::Value::String(d.to_string()),
+        #[cfg(feature = "chrono")]
         Value::ChronoTime(Some(t)) => serde_json::Value::String(t.to_string()),
+        #[cfg(feature = "chrono")]
         Value::ChronoDateTime(Some(dt)) => serde_json::Value::String(dt.to_string()),
+        #[cfg(feature = "time")]
+        Value::TimeDate(Some(d)) => serde_json::Value::String(d.to_string()),
+        #[cfg(feature = "time")]
+        Value::TimeTime(Some(t)) => serde_json::Value::String(t.to_string()),
+        #[cfg(feature = "time")]
+        Value::TimeDateTime(Some(dt)) => serde_json::Value::String(dt.to_string()),
+        #[cfg(feature = "uuid")]
         Value::Uuid(Some(u)) => serde_json::Value::String(u.to_string()),
         Value::Json(Some(j)) => *j,
         _ => serde_json::Value::Null,
@@ -178,7 +273,7 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
         DataTypeNode::Nullable(inner) => {
             let null_flag = read_bytes(input, 1)?[0];
             if null_flag != 0 {
-                return Ok(typed_null(inner));
+                return typed_null(inner);
             }
             decode_value(input, inner)
         }
@@ -273,7 +368,6 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
             ))))
         }
         DataTypeNode::BFloat16 => {
-            // BFloat16: upper 16 bits of a float32
             let b = read_bytes(input, 2)?;
             let bits = u16::from_le_bytes(b.try_into().unwrap());
             let v = f32::from_bits((bits as u32) << 16);
@@ -293,6 +387,7 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
         }
 
         // ── UUID ──────────────────────────────────────────────────────────
+        #[cfg(feature = "uuid")]
         DataTypeNode::UUID => {
             let b = read_bytes(input, 16)?;
             // ClickHouse stores UUID as two LE u64 values (high, then low).
@@ -301,8 +396,13 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
             let uuid = Uuid::from_u128((hi as u128) << 64 | lo as u128);
             Ok(Value::Uuid(Some(uuid)))
         }
+        #[cfg(not(feature = "uuid"))]
+        DataTypeNode::UUID => Err(Error::Unsupported(
+            "UUID decoding requires the `uuid` feature".into(),
+        )),
 
         // ── Dates ─────────────────────────────────────────────────────────
+        #[cfg(feature = "chrono")]
         DataTypeNode::Date => {
             let b = read_bytes(input, 2)?;
             let days = u16::from_le_bytes(b.try_into().unwrap()) as i32;
@@ -310,6 +410,24 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
                 .ok_or_else(|| Error::Custom("Date out of range".to_string()))?;
             Ok(Value::ChronoDate(Some(date)))
         }
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Date => {
+            let b = read_bytes(input, 2)?;
+            let days = u16::from_le_bytes(b.try_into().unwrap()) as i32;
+            let julian = days + UNIX_EPOCH_DAYS_FROM_CE + CE_DAYS_TO_JULIAN_OFFSET;
+            let date = sea_query::value::prelude::time::Date::from_julian_day(julian)
+                .map_err(|_| Error::Custom("Date out of range".to_string()))?;
+            Ok(Value::TimeDate(Some(date)))
+        }
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Date => {
+            let _ = read_bytes(input, 2)?;
+            Err(Error::Unsupported(
+                "Date decoding requires the `chrono` or `time` feature".into(),
+            ))
+        }
+
+        #[cfg(feature = "chrono")]
         DataTypeNode::Date32 => {
             let b = read_bytes(input, 4)?;
             let days = i32::from_le_bytes(b.try_into().unwrap());
@@ -317,13 +435,47 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
                 .ok_or_else(|| Error::Custom("Date32 out of range".to_string()))?;
             Ok(Value::ChronoDate(Some(date)))
         }
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Date32 => {
+            let b = read_bytes(input, 4)?;
+            let days = i32::from_le_bytes(b.try_into().unwrap());
+            let julian = days + UNIX_EPOCH_DAYS_FROM_CE + CE_DAYS_TO_JULIAN_OFFSET;
+            let date = sea_query::value::prelude::time::Date::from_julian_day(julian)
+                .map_err(|_| Error::Custom("Date32 out of range".to_string()))?;
+            Ok(Value::TimeDate(Some(date)))
+        }
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Date32 => {
+            let _ = read_bytes(input, 4)?;
+            Err(Error::Unsupported(
+                "Date32 decoding requires the `chrono` or `time` feature".into(),
+            ))
+        }
 
         // ── DateTimes ─────────────────────────────────────────────────────
+        #[cfg(feature = "chrono")]
         DataTypeNode::DateTime(_tz) => {
             let b = read_bytes(input, 4)?;
             let secs = u32::from_le_bytes(b.try_into().unwrap()) as i64;
             Ok(Value::ChronoDateTime(Some(datetime_from_ticks(secs, 1)?)))
         }
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::DateTime(_tz) => {
+            let b = read_bytes(input, 4)?;
+            let secs = u32::from_le_bytes(b.try_into().unwrap()) as i64;
+            Ok(Value::TimeDateTime(Some(datetime_from_ticks_time(
+                secs, 1,
+            )?)))
+        }
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::DateTime(_tz) => {
+            let _ = read_bytes(input, 4)?;
+            Err(Error::Unsupported(
+                "DateTime decoding requires the `chrono` or `time` feature".into(),
+            ))
+        }
+
+        #[cfg(feature = "chrono")]
         DataTypeNode::DateTime64(prec, _tz) => {
             let b = read_bytes(input, 8)?;
             let ticks = i64::from_le_bytes(b.try_into().unwrap());
@@ -332,8 +484,25 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
                 ticks, scale,
             )?)))
         }
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::DateTime64(prec, _tz) => {
+            let b = read_bytes(input, 8)?;
+            let ticks = i64::from_le_bytes(b.try_into().unwrap());
+            let scale = precision_scale(prec);
+            Ok(Value::TimeDateTime(Some(datetime_from_ticks_time(
+                ticks, scale,
+            )?)))
+        }
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::DateTime64(_prec, _tz) => {
+            let _ = read_bytes(input, 8)?;
+            Err(Error::Unsupported(
+                "DateTime64 decoding requires the `chrono` or `time` feature".into(),
+            ))
+        }
 
         // ── Time ──────────────────────────────────────────────────────────
+        #[cfg(feature = "chrono")]
         DataTypeNode::Time => {
             let b = read_bytes(input, 4)?;
             let secs = i32::from_le_bytes(b.try_into().unwrap());
@@ -341,6 +510,22 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
                 .ok_or_else(|| Error::Custom("Time out of range".to_string()))?;
             Ok(Value::ChronoTime(Some(time)))
         }
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Time => {
+            let b = read_bytes(input, 4)?;
+            let secs = i32::from_le_bytes(b.try_into().unwrap()).max(0) as u32;
+            let t = time_from_day_secs_nanos(secs, 0)?;
+            Ok(Value::TimeTime(Some(t)))
+        }
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Time => {
+            let _ = read_bytes(input, 4)?;
+            Err(Error::Unsupported(
+                "Time decoding requires the `chrono` or `time` feature".into(),
+            ))
+        }
+
+        #[cfg(feature = "chrono")]
         DataTypeNode::Time64(prec) => {
             let b = read_bytes(input, 8)?;
             let ticks = i64::from_le_bytes(b.try_into().unwrap());
@@ -350,6 +535,23 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
             let time = NaiveTime::from_num_seconds_from_midnight_opt(secs, nsecs)
                 .ok_or_else(|| Error::Custom("Time64 out of range".to_string()))?;
             Ok(Value::ChronoTime(Some(time)))
+        }
+        #[cfg(all(feature = "time", not(feature = "chrono")))]
+        DataTypeNode::Time64(prec) => {
+            let b = read_bytes(input, 8)?;
+            let ticks = i64::from_le_bytes(b.try_into().unwrap());
+            let scale = precision_scale(prec);
+            let secs = ticks.div_euclid(scale) as u32;
+            let nsecs = (ticks.rem_euclid(scale) * (1_000_000_000 / scale)) as u32;
+            let t = time_from_day_secs_nanos(secs, nsecs)?;
+            Ok(Value::TimeTime(Some(t)))
+        }
+        #[cfg(not(any(feature = "chrono", feature = "time")))]
+        DataTypeNode::Time64(_prec) => {
+            let _ = read_bytes(input, 8)?;
+            Err(Error::Unsupported(
+                "Time64 decoding requires the `chrono` or `time` feature".into(),
+            ))
         }
 
         // ── Decimals ──────────────────────────────────────────────────────
@@ -375,7 +577,6 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
             if let Ok(dec) = Decimal::try_from_i128_with_scale(raw, *scale as u32) {
                 Ok(Value::Decimal(Some(dec)))
             } else {
-                // value exceeds rust_decimal's limit; fall back to BigDecimal.
                 let bd = bigdecimal_with_scale(&raw.to_string(), *scale)?;
                 Ok(Value::BigDecimal(Some(Box::new(bd))))
             }
@@ -390,7 +591,6 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
         // ── IP addresses ──────────────────────────────────────────────────
         DataTypeNode::IPv4 => {
             let b = read_bytes(input, 4)?;
-            // RowBinary stores IPv4 as a u32 in LE; Ipv4Addr::from(u32) takes BE (network order).
             let n = u32::from_le_bytes(b.try_into().unwrap());
             let ip = std::net::Ipv4Addr::from(n);
             Ok(Value::String(Some(ip.to_string())))
@@ -445,7 +645,6 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
         }
 
         // ── Map -> JSON object ─────────────────────────────────────────────
-        // RowBinary encodes Map as: LEB128 count, then interleaved k-v pairs.
         DataTypeNode::Map([key_type, val_type]) => {
             let count = read_leb128(input)?;
             let mut obj = serde_json::Map::new();

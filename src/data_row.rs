@@ -259,7 +259,8 @@ fn f64_truncate_to_i128(f: f64) -> NumericI128 {
 /// Returns `true` if `val` is a NULL variant of any type.
 fn is_null(val: &sea_query::Value) -> bool {
     use sea_query::Value as V;
-    matches!(
+    #[allow(unused_mut)]
+    let mut null = matches!(
         val,
         V::Bool(None)
             | V::TinyInt(None)
@@ -277,12 +278,29 @@ fn is_null(val: &sea_query::Value) -> bool {
             | V::Bytes(None)
             | V::BigDecimal(None)
             | V::Decimal(None)
-            | V::ChronoDate(None)
-            | V::ChronoDateTime(None)
-            | V::ChronoTime(None)
-            | V::Uuid(None)
             | V::Json(None)
-    )
+    );
+    #[cfg(feature = "chrono")]
+    {
+        null = null
+            || matches!(
+                val,
+                V::ChronoDate(None) | V::ChronoDateTime(None) | V::ChronoTime(None)
+            );
+    }
+    #[cfg(feature = "time")]
+    {
+        null = null
+            || matches!(
+                val,
+                V::TimeDate(None) | V::TimeDateTime(None) | V::TimeTime(None)
+            );
+    }
+    #[cfg(feature = "uuid")]
+    {
+        null = null || matches!(val, V::Uuid(None));
+    }
+    null
 }
 
 /// Human-readable name of the [`sea_query::Value`] variant (for error messages).
@@ -306,10 +324,20 @@ fn value_variant_name(val: &sea_query::Value) -> &'static str {
         V::Json(_) => "Json",
         V::Decimal(_) => "Decimal",
         V::BigDecimal(_) => "BigDecimal",
+        #[cfg(feature = "uuid")]
         V::Uuid(_) => "Uuid",
+        #[cfg(feature = "chrono")]
         V::ChronoDate(_) => "ChronoDate",
+        #[cfg(feature = "chrono")]
         V::ChronoDateTime(_) => "ChronoDateTime",
+        #[cfg(feature = "chrono")]
         V::ChronoTime(_) => "ChronoTime",
+        #[cfg(feature = "time")]
+        V::TimeDate(_) => "TimeDate",
+        #[cfg(feature = "time")]
+        V::TimeDateTime(_) => "TimeDateTime",
+        #[cfg(feature = "time")]
+        V::TimeTime(_) => "TimeTime",
         _ => "unknown",
     }
 }
@@ -520,6 +548,7 @@ impl FromValue for sea_query::value::prelude::BigDecimal {
     }
 }
 
+#[cfg(feature = "uuid")]
 impl FromValue for sea_query::value::prelude::Uuid {
     fn from_value(val: &sea_query::Value) -> Result<Self, TypeError> {
         use sea_query::Value as V;

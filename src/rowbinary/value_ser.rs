@@ -7,6 +7,7 @@ use clickhouse_types::data_types::{DecimalType, EnumType};
 use clickhouse_types::put_leb128;
 use clickhouse_types::{Column, DataTypeNode};
 use sea_query::Value;
+#[cfg(feature = "rust_decimal")]
 use sea_query::value::prelude::Decimal;
 #[cfg(feature = "uuid")]
 use sea_query::value::prelude::Uuid;
@@ -66,10 +67,16 @@ fn is_null(val: &Value) -> bool {
             | Value::String(None)
             | Value::Char(None)
             | Value::Bytes(None)
-            | Value::BigDecimal(None)
-            | Value::Decimal(None)
             | Value::Json(None)
     );
+    #[cfg(feature = "rust_decimal")]
+    {
+        null = null || matches!(val, Value::Decimal(None));
+    }
+    #[cfg(feature = "bigdecimal")]
+    {
+        null = null || matches!(val, Value::BigDecimal(None));
+    }
     #[cfg(feature = "chrono")]
     {
         null = null
@@ -330,6 +337,7 @@ fn serialize_typed<B: BufMut>(buf: &mut B, val: &Value, dt: &DataTypeNode) -> Re
             "Time64 serialization requires the `chrono` or `time` feature".into(),
         )),
 
+        #[cfg(feature = "rust_decimal")]
         DataTypeNode::Decimal(_, scale, DecimalType::Decimal32) => match val {
             Value::Decimal(Some(d)) => {
                 buf.put_i32_le(decimal_to_raw_i64(d, *scale) as i32);
@@ -337,6 +345,20 @@ fn serialize_typed<B: BufMut>(buf: &mut B, val: &Value, dt: &DataTypeNode) -> Re
             }
             _ => Err(type_mismatch("Decimal32", val)),
         },
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataTypeNode::Decimal(_, scale, DecimalType::Decimal32) => match val {
+            Value::BigDecimal(Some(d)) => {
+                buf.put_i32_le(bigdecimal_to_raw_i128(d, *scale)? as i32);
+                Ok(())
+            }
+            _ => Err(type_mismatch("Decimal32", val)),
+        },
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal32) => Err(Error::Unsupported(
+            "Decimal serialization requires the `rust_decimal` or `bigdecimal` feature".into(),
+        )),
+
+        #[cfg(feature = "rust_decimal")]
         DataTypeNode::Decimal(_, scale, DecimalType::Decimal64) => match val {
             Value::Decimal(Some(d)) => {
                 buf.put_i64_le(decimal_to_raw_i64(d, *scale));
@@ -344,6 +366,20 @@ fn serialize_typed<B: BufMut>(buf: &mut B, val: &Value, dt: &DataTypeNode) -> Re
             }
             _ => Err(type_mismatch("Decimal64", val)),
         },
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataTypeNode::Decimal(_, scale, DecimalType::Decimal64) => match val {
+            Value::BigDecimal(Some(d)) => {
+                buf.put_i64_le(bigdecimal_to_raw_i128(d, *scale)? as i64);
+                Ok(())
+            }
+            _ => Err(type_mismatch("Decimal64", val)),
+        },
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal64) => Err(Error::Unsupported(
+            "Decimal serialization requires the `rust_decimal` or `bigdecimal` feature".into(),
+        )),
+
+        #[cfg(all(feature = "rust_decimal", feature = "bigdecimal"))]
         DataTypeNode::Decimal(_, scale, DecimalType::Decimal128) => {
             let raw = match val {
                 Value::Decimal(Some(d)) => decimal_to_raw_i128(d, *scale),
@@ -353,6 +389,28 @@ fn serialize_typed<B: BufMut>(buf: &mut B, val: &Value, dt: &DataTypeNode) -> Re
             buf.put_i128_le(raw);
             Ok(())
         }
+        #[cfg(all(feature = "rust_decimal", not(feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, scale, DecimalType::Decimal128) => match val {
+            Value::Decimal(Some(d)) => {
+                buf.put_i128_le(decimal_to_raw_i128(d, *scale));
+                Ok(())
+            }
+            _ => Err(type_mismatch("Decimal128", val)),
+        },
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataTypeNode::Decimal(_, scale, DecimalType::Decimal128) => match val {
+            Value::BigDecimal(Some(d)) => {
+                buf.put_i128_le(bigdecimal_to_raw_i128(d, *scale)?);
+                Ok(())
+            }
+            _ => Err(type_mismatch("Decimal128", val)),
+        },
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal128) => Err(Error::Unsupported(
+            "Decimal128 serialization requires the `rust_decimal` or `bigdecimal` feature".into(),
+        )),
+
+        #[cfg(all(feature = "rust_decimal", feature = "bigdecimal"))]
         DataTypeNode::Decimal(_, scale, DecimalType::Decimal256) => {
             let le32 = match val {
                 Value::Decimal(Some(d)) => {
@@ -367,6 +425,29 @@ fn serialize_typed<B: BufMut>(buf: &mut B, val: &Value, dt: &DataTypeNode) -> Re
             buf.put_slice(&le32);
             Ok(())
         }
+        #[cfg(all(feature = "rust_decimal", not(feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, scale, DecimalType::Decimal256) => match val {
+            Value::Decimal(Some(d)) => {
+                let raw = decimal_to_raw_i128(d, *scale);
+                let mut b = [if raw < 0 { 0xffu8 } else { 0u8 }; 32];
+                b[..16].copy_from_slice(&raw.to_le_bytes());
+                buf.put_slice(&b);
+                Ok(())
+            }
+            _ => Err(type_mismatch("Decimal256", val)),
+        },
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataTypeNode::Decimal(_, scale, DecimalType::Decimal256) => match val {
+            Value::BigDecimal(Some(d)) => {
+                buf.put_slice(&bigdecimal_to_raw_le256(d, *scale)?);
+                Ok(())
+            }
+            _ => Err(type_mismatch("Decimal256", val)),
+        },
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal256) => Err(Error::Unsupported(
+            "Decimal256 serialization requires the `rust_decimal` or `bigdecimal` feature".into(),
+        )),
         DataTypeNode::Int128
         | DataTypeNode::UInt128
         | DataTypeNode::Int256
@@ -584,6 +665,7 @@ fn time_time_subsec_nanos(t: &sea_query::value::prelude::time::Time) -> u32 {
 
 // ── decimal helpers ──────────────────────────────────────────────────────────
 
+#[cfg(feature = "rust_decimal")]
 fn decimal_to_raw_i64(d: &Decimal, target_scale: u8) -> i64 {
     let mantissa = d.mantissa();
     let diff = target_scale as i32 - d.scale() as i32;
@@ -594,6 +676,7 @@ fn decimal_to_raw_i64(d: &Decimal, target_scale: u8) -> i64 {
     }
 }
 
+#[cfg(feature = "rust_decimal")]
 fn decimal_to_raw_i128(d: &Decimal, target_scale: u8) -> i128 {
     let mantissa = d.mantissa();
     let diff = target_scale as i32 - d.scale() as i32;
@@ -604,6 +687,7 @@ fn decimal_to_raw_i128(d: &Decimal, target_scale: u8) -> i128 {
     }
 }
 
+#[cfg(feature = "bigdecimal")]
 fn bigdecimal_to_raw_i128(d: &sea_query::prelude::BigDecimal, target_scale: u8) -> Result<i128> {
     use sea_query::prelude::bigdecimal::ToPrimitive;
     let rescaled = d.clone().with_scale(target_scale as i64);
@@ -613,6 +697,7 @@ fn bigdecimal_to_raw_i128(d: &sea_query::prelude::BigDecimal, target_scale: u8) 
         .ok_or_else(|| Error::Custom(format!("Decimal128: value out of i128 range")))
 }
 
+#[cfg(feature = "bigdecimal")]
 fn bigdecimal_to_raw_le256(
     d: &sea_query::prelude::BigDecimal,
     target_scale: u8,

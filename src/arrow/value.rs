@@ -4,16 +4,22 @@ use sea_orm_arrow::arrow::array::{
     Time64NanosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray,
     TimestampNanosecondArray, TimestampSecondArray,
 };
+#[cfg(any(feature = "rust_decimal", feature = "bigdecimal"))]
+use sea_orm_arrow::arrow::array::Decimal128Array;
+#[cfg(feature = "bigdecimal")]
+use sea_orm_arrow::arrow::array::Decimal256Array;
 use sea_orm_arrow::arrow::{
     array::{
-        Array, BinaryArray, BooleanArray, Decimal128Array, Decimal256Array, FixedSizeBinaryArray,
-        Float32Array, Float64Array, Int8Array, Int16Array, Int32Array, Int64Array,
-        LargeBinaryArray, LargeStringArray, StringArray, UInt8Array, UInt16Array, UInt32Array,
-        UInt64Array,
+        Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, Float32Array, Float64Array,
+        Int8Array, Int16Array, Int32Array, Int64Array, LargeBinaryArray, LargeStringArray,
+        StringArray, UInt8Array, UInt16Array, UInt32Array, UInt64Array,
     },
-    datatypes::{DataType, TimeUnit, i256},
+    datatypes::{DataType, TimeUnit},
 };
+#[cfg(feature = "bigdecimal")]
+use sea_orm_arrow::arrow::datatypes::i256;
 use sea_query::Value;
+#[cfg(feature = "rust_decimal")]
 use sea_query::prelude::Decimal;
 #[cfg(feature = "uuid")]
 use sea_query::prelude::Uuid;
@@ -116,6 +122,7 @@ pub(crate) fn element_to_value(array: &dyn Array, dtype: &DataType, row: usize) 
 
         DataType::Time32(unit) | DataType::Time64(unit) => arrow_to_time(array, dtype, unit, row)?,
 
+        #[cfg(all(feature = "rust_decimal", feature = "bigdecimal"))]
         DataType::Decimal128(_, scale) => {
             let a = downcast::<Decimal128Array>(array, "Decimal128")?;
             let raw = a.value(row);
@@ -126,10 +133,42 @@ pub(crate) fn element_to_value(array: &dyn Array, dtype: &DataType, row: usize) 
                 bigdecimal_from_i128(raw, scale as i64)?
             }
         }
+        #[cfg(all(feature = "rust_decimal", not(feature = "bigdecimal")))]
+        DataType::Decimal128(_, scale) => {
+            let a = downcast::<Decimal128Array>(array, "Decimal128")?;
+            let raw = a.value(row);
+            Decimal::try_from_i128_with_scale(raw, *scale as u32)
+                .map(|dec| Value::Decimal(Some(dec)))
+                .map_err(|_| {
+                    Error::Other(
+                        "Decimal128 value exceeds rust_decimal range; \
+                         enable the `bigdecimal` feature for full Decimal128 support"
+                            .into(),
+                    )
+                })?
+        }
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataType::Decimal128(_, scale) => {
+            let a = downcast::<Decimal128Array>(array, "Decimal128")?;
+            bigdecimal_from_i128(a.value(row), *scale as i64)?
+        }
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataType::Decimal128(_, _) => {
+            return Err(Error::Unsupported(
+                "Decimal128 requires the `rust_decimal` or `bigdecimal` feature".into(),
+            ));
+        }
 
+        #[cfg(feature = "bigdecimal")]
         DataType::Decimal256(_, scale) => {
             let a = downcast::<Decimal256Array>(array, "Decimal256")?;
             decimal256_to_value(a.value(row), *scale)?
+        }
+        #[cfg(not(feature = "bigdecimal"))]
+        DataType::Decimal256(_, _) => {
+            return Err(Error::Unsupported(
+                "Decimal256 requires the `bigdecimal` feature".into(),
+            ));
         }
 
         other => {
@@ -194,8 +233,24 @@ fn null_value(dtype: &DataType) -> Result<Value> {
             ));
         }
 
+        #[cfg(feature = "rust_decimal")]
         DataType::Decimal128(_, _) => Value::Decimal(None),
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataType::Decimal128(_, _) => Value::BigDecimal(None),
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataType::Decimal128(_, _) => {
+            return Err(Error::Unsupported(
+                "Decimal128 requires the `rust_decimal` or `bigdecimal` feature".into(),
+            ));
+        }
+        #[cfg(feature = "bigdecimal")]
         DataType::Decimal256(_, _) => Value::BigDecimal(None),
+        #[cfg(not(feature = "bigdecimal"))]
+        DataType::Decimal256(_, _) => {
+            return Err(Error::Unsupported(
+                "Decimal256 requires the `bigdecimal` feature".into(),
+            ));
+        }
         _ => Value::Bytes(None),
     })
 }
@@ -429,7 +484,7 @@ fn arrow_to_time(
 
 // ── Decimal helpers ──────────────────────────────────────────────────────────
 
-/// Falls back to `BigDecimal` for Decimal128 values whose scale exceeds rust_decimal limits.
+#[cfg(feature = "bigdecimal")]
 fn bigdecimal_from_i128(value: i128, scale: i64) -> Result<Value> {
     use sea_query::prelude::bigdecimal::{BigDecimal, num_bigint::BigInt};
     let bigint = BigInt::from(value);
@@ -437,7 +492,7 @@ fn bigdecimal_from_i128(value: i128, scale: i64) -> Result<Value> {
     Ok(Value::BigDecimal(Some(Box::new(dec))))
 }
 
-/// Converts an Arrow [`i256`] with the given `scale` to `Value::BigDecimal`.
+#[cfg(feature = "bigdecimal")]
 fn decimal256_to_value(value: i256, scale: i8) -> Result<Value> {
     use sea_query::prelude::bigdecimal::{
         BigDecimal,

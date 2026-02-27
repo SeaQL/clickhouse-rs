@@ -4,10 +4,14 @@
 //!   cargo run --example arrow_batch --features arrow
 
 use clickhouse::{Client, error::Result};
-use sea_orm_arrow::arrow::array::{
-    Array, Decimal128Array, Decimal256Array, Int32Array, StringArray, UInt64Array,
-};
-use sea_orm_arrow::arrow::datatypes::{DataType, i256};
+#[cfg(any(feature = "rust_decimal", feature = "bigdecimal"))]
+use sea_orm_arrow::arrow::array::Decimal128Array;
+#[cfg(feature = "bigdecimal")]
+use sea_orm_arrow::arrow::array::Decimal256Array;
+use sea_orm_arrow::arrow::array::{Array, Int32Array, StringArray, UInt64Array};
+use sea_orm_arrow::arrow::datatypes::DataType;
+#[cfg(feature = "bigdecimal")]
+use sea_orm_arrow::arrow::datatypes::i256;
 
 /// Basic column layout: schema fields and typed array values are correct.
 async fn test_column_layout(client: &Client) -> Result<()> {
@@ -158,8 +162,7 @@ async fn test_empty(client: &Client) -> Result<()> {
     Ok(())
 }
 
-/// Decimal128: ClickHouse Decimal128 columns map to Arrow `Decimal128Array`.
-/// Raw i128 values with the column scale encode the fixed-point number.
+#[cfg(any(feature = "rust_decimal", feature = "bigdecimal"))]
 async fn test_decimal128(client: &Client) -> Result<()> {
     let mut cursor = client
         .query(
@@ -206,7 +209,7 @@ async fn test_decimal128(client: &Client) -> Result<()> {
     Ok(())
 }
 
-/// Decimal256: ClickHouse Decimal256 columns map to Arrow `Decimal256Array` (`i256`).
+#[cfg(feature = "bigdecimal")]
 async fn test_decimal256(client: &Client) -> Result<()> {
     let mut cursor = client
         .query(
@@ -285,7 +288,11 @@ async fn main() -> Result<()> {
     test_mixed_types(&client).await?;
     test_empty(&client).await?;
     test_schema_shared(&client).await?;
+
+    #[cfg(any(feature = "rust_decimal", feature = "bigdecimal"))]
     test_decimal128(&client).await?;
+
+    #[cfg(feature = "bigdecimal")]
     test_decimal256(&client).await?;
 
     println!("All tests OK");

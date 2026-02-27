@@ -1,15 +1,21 @@
 use crate::error::{Error, Result};
+#[cfg(feature = "bigdecimal")]
 use crate::types::{Int256, UInt256};
 use clickhouse_types::DataTypeNode;
 #[cfg(any(feature = "chrono", feature = "time"))]
 use clickhouse_types::data_types::DateTimePrecision;
 use clickhouse_types::data_types::{DecimalType, EnumType};
 use sea_query::Value;
+#[cfg(feature = "bigdecimal")]
+use sea_query::value::prelude::BigDecimal;
+#[cfg(feature = "rust_decimal")]
+use sea_query::value::prelude::Decimal;
 #[cfg(feature = "uuid")]
 use sea_query::value::prelude::Uuid;
-use sea_query::value::prelude::{BigDecimal, Decimal, serde_json};
+use sea_query::value::prelude::serde_json;
 #[cfg(feature = "chrono")]
 use sea_query::value::prelude::{NaiveDate, NaiveDateTime, NaiveTime};
+#[cfg(feature = "bigdecimal")]
 use std::str::FromStr;
 
 // Days from the chrono CE epoch (0001-01-01) to the Unix epoch (1970-01-01).
@@ -134,9 +140,7 @@ fn time_from_day_secs_nanos(
         .map_err(|_| Error::Custom("time out of range".to_string()))
 }
 
-/// Build a `BigDecimal` from an integer string and an explicit scale.
-///
-/// E.g. `("12345", 2)` -> `123.45`
+#[cfg(feature = "bigdecimal")]
 fn bigdecimal_with_scale(int_str: &str, scale: u8) -> Result<BigDecimal> {
     let bd = BigDecimal::from_str(int_str)
         .map_err(|e| Error::Custom(format!("BigDecimal parse error: {e}")))?;
@@ -156,12 +160,26 @@ fn typed_null(dt: &DataTypeNode) -> Result<Value> {
         DataTypeNode::Int16 => Value::SmallInt(None),
         DataTypeNode::Int32 => Value::Int(None),
         DataTypeNode::Int64 => Value::BigInt(None),
+        #[cfg(feature = "bigdecimal")]
         DataTypeNode::Int128 | DataTypeNode::Int256 => Value::BigDecimal(None),
+        #[cfg(not(feature = "bigdecimal"))]
+        DataTypeNode::Int128 | DataTypeNode::Int256 => {
+            return Err(Error::Unsupported(
+                "Int128/Int256 requires the `bigdecimal` feature".into(),
+            ));
+        }
         DataTypeNode::UInt8 => Value::TinyUnsigned(None),
         DataTypeNode::UInt16 => Value::SmallUnsigned(None),
         DataTypeNode::UInt32 => Value::Unsigned(None),
         DataTypeNode::UInt64 => Value::BigUnsigned(None),
+        #[cfg(feature = "bigdecimal")]
         DataTypeNode::UInt128 | DataTypeNode::UInt256 => Value::BigDecimal(None),
+        #[cfg(not(feature = "bigdecimal"))]
+        DataTypeNode::UInt128 | DataTypeNode::UInt256 => {
+            return Err(Error::Unsupported(
+                "UInt128/UInt256 requires the `bigdecimal` feature".into(),
+            ));
+        }
         DataTypeNode::Float32 | DataTypeNode::BFloat16 => Value::Float(None),
         DataTypeNode::Float64 => Value::Double(None),
         DataTypeNode::String => Value::String(None),
@@ -209,13 +227,47 @@ fn typed_null(dt: &DataTypeNode) -> Result<Value> {
             ));
         }
 
+        #[cfg(feature = "rust_decimal")]
         DataTypeNode::Decimal(_, _, DecimalType::Decimal32)
         | DataTypeNode::Decimal(_, _, DecimalType::Decimal64) => Value::Decimal(None),
-        DataTypeNode::Decimal(_, scale, DecimalType::Decimal128) if *scale <= 28 => {
-            Value::Decimal(None)
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal32)
+        | DataTypeNode::Decimal(_, _, DecimalType::Decimal64) => Value::BigDecimal(None),
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal32)
+        | DataTypeNode::Decimal(_, _, DecimalType::Decimal64) => {
+            return Err(Error::Unsupported(
+                "Decimal requires the `rust_decimal` or `bigdecimal` feature".into(),
+            ));
         }
-        DataTypeNode::Decimal(_, _, DecimalType::Decimal128)
-        | DataTypeNode::Decimal(_, _, DecimalType::Decimal256) => Value::BigDecimal(None),
+
+        #[cfg(all(feature = "rust_decimal", feature = "bigdecimal"))]
+        DataTypeNode::Decimal(_, scale, DecimalType::Decimal128) => {
+            if *scale <= 28 {
+                Value::Decimal(None)
+            } else {
+                Value::BigDecimal(None)
+            }
+        }
+        #[cfg(all(feature = "rust_decimal", not(feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal128) => Value::Decimal(None),
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal128) => Value::BigDecimal(None),
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal128) => {
+            return Err(Error::Unsupported(
+                "Decimal128 requires the `rust_decimal` or `bigdecimal` feature".into(),
+            ));
+        }
+
+        #[cfg(feature = "bigdecimal")]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal256) => Value::BigDecimal(None),
+        #[cfg(not(feature = "bigdecimal"))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal256) => {
+            return Err(Error::Unsupported(
+                "Decimal256 requires the `bigdecimal` feature".into(),
+            ));
+        }
         DataTypeNode::IPv4 | DataTypeNode::IPv6 => Value::String(None),
         DataTypeNode::Enum(_, _) => Value::String(None),
         DataTypeNode::Interval(_) => Value::BigInt(None),
@@ -241,7 +293,9 @@ fn value_to_json(v: Value) -> serde_json::Value {
         Value::Double(Some(v)) => serde_json::json!(v),
         Value::String(Some(s)) => serde_json::Value::String(s),
         Value::Bytes(Some(b)) => serde_json::json!(b),
+        #[cfg(feature = "bigdecimal")]
         Value::BigDecimal(Some(bd)) => serde_json::Value::String(bd.to_string()),
+        #[cfg(feature = "rust_decimal")]
         Value::Decimal(Some(d)) => serde_json::Value::String(d.to_string()),
         #[cfg(feature = "chrono")]
         Value::ChronoDate(Some(d)) => serde_json::Value::String(d.to_string()),
@@ -305,17 +359,33 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
                 b.try_into().unwrap(),
             ))))
         }
+        #[cfg(feature = "bigdecimal")]
         DataTypeNode::Int128 => {
             let b = read_bytes(input, 16)?;
             let v = i128::from_le_bytes(b.try_into().unwrap());
             let bd = bigdecimal_with_scale(&v.to_string(), 0)?;
             Ok(Value::BigDecimal(Some(Box::new(bd))))
         }
+        #[cfg(not(feature = "bigdecimal"))]
+        DataTypeNode::Int128 => {
+            let _ = read_bytes(input, 16)?;
+            Err(Error::Unsupported(
+                "Int128 decoding requires the `bigdecimal` feature".into(),
+            ))
+        }
+        #[cfg(feature = "bigdecimal")]
         DataTypeNode::Int256 => {
             let b = read_bytes(input, 32)?;
             let v = Int256::from_le_bytes(b.try_into().unwrap());
             let bd = bigdecimal_with_scale(&v.to_string(), 0)?;
             Ok(Value::BigDecimal(Some(Box::new(bd))))
+        }
+        #[cfg(not(feature = "bigdecimal"))]
+        DataTypeNode::Int256 => {
+            let _ = read_bytes(input, 32)?;
+            Err(Error::Unsupported(
+                "Int256 decoding requires the `bigdecimal` feature".into(),
+            ))
         }
 
         // ── Unsigned integers ─────────────────────────────────────────────
@@ -341,17 +411,33 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
                 b.try_into().unwrap(),
             ))))
         }
+        #[cfg(feature = "bigdecimal")]
         DataTypeNode::UInt128 => {
             let b = read_bytes(input, 16)?;
             let v = u128::from_le_bytes(b.try_into().unwrap());
             let bd = bigdecimal_with_scale(&v.to_string(), 0)?;
             Ok(Value::BigDecimal(Some(Box::new(bd))))
         }
+        #[cfg(not(feature = "bigdecimal"))]
+        DataTypeNode::UInt128 => {
+            let _ = read_bytes(input, 16)?;
+            Err(Error::Unsupported(
+                "UInt128 decoding requires the `bigdecimal` feature".into(),
+            ))
+        }
+        #[cfg(feature = "bigdecimal")]
         DataTypeNode::UInt256 => {
             let b = read_bytes(input, 32)?;
             let v = UInt256::from_le_bytes(b.try_into().unwrap());
             let bd = bigdecimal_with_scale(&v.to_string(), 0)?;
             Ok(Value::BigDecimal(Some(Box::new(bd))))
+        }
+        #[cfg(not(feature = "bigdecimal"))]
+        DataTypeNode::UInt256 => {
+            let _ = read_bytes(input, 32)?;
+            Err(Error::Unsupported(
+                "UInt256 decoding requires the `bigdecimal` feature".into(),
+            ))
         }
 
         // ── Floats ────────────────────────────────────────────────────────
@@ -555,6 +641,7 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
         }
 
         // ── Decimals ──────────────────────────────────────────────────────
+        #[cfg(feature = "rust_decimal")]
         DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal32) => {
             let b = read_bytes(input, 4)?;
             let raw = i32::from_le_bytes(b.try_into().unwrap());
@@ -563,6 +650,22 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
                 *scale as u32,
             ))))
         }
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal32) => {
+            let b = read_bytes(input, 4)?;
+            let raw = i32::from_le_bytes(b.try_into().unwrap());
+            let bd = bigdecimal_with_scale(&raw.to_string(), *scale)?;
+            Ok(Value::BigDecimal(Some(Box::new(bd))))
+        }
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal32) => {
+            let _ = read_bytes(input, 4)?;
+            Err(Error::Unsupported(
+                "Decimal requires the `rust_decimal` or `bigdecimal` feature".into(),
+            ))
+        }
+
+        #[cfg(feature = "rust_decimal")]
         DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal64) => {
             let b = read_bytes(input, 8)?;
             let raw = i64::from_le_bytes(b.try_into().unwrap());
@@ -571,6 +674,22 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
                 *scale as u32,
             ))))
         }
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal64) => {
+            let b = read_bytes(input, 8)?;
+            let raw = i64::from_le_bytes(b.try_into().unwrap());
+            let bd = bigdecimal_with_scale(&raw.to_string(), *scale)?;
+            Ok(Value::BigDecimal(Some(Box::new(bd))))
+        }
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal64) => {
+            let _ = read_bytes(input, 8)?;
+            Err(Error::Unsupported(
+                "Decimal requires the `rust_decimal` or `bigdecimal` feature".into(),
+            ))
+        }
+
+        #[cfg(all(feature = "rust_decimal", feature = "bigdecimal"))]
         DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal128) => {
             let b = read_bytes(input, 16)?;
             let raw = i128::from_le_bytes(b.try_into().unwrap());
@@ -581,11 +700,48 @@ fn decode_value(input: &mut &[u8], dt: &DataTypeNode) -> Result<Value> {
                 Ok(Value::BigDecimal(Some(Box::new(bd))))
             }
         }
+        #[cfg(all(feature = "rust_decimal", not(feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal128) => {
+            let b = read_bytes(input, 16)?;
+            let raw = i128::from_le_bytes(b.try_into().unwrap());
+            Decimal::try_from_i128_with_scale(raw, *scale as u32)
+                .map(|dec| Value::Decimal(Some(dec)))
+                .map_err(|_| {
+                    Error::Custom(
+                        "Decimal128 value exceeds rust_decimal range; \
+                         enable the `bigdecimal` feature for full Decimal128 support"
+                            .to_string(),
+                    )
+                })
+        }
+        #[cfg(all(feature = "bigdecimal", not(feature = "rust_decimal")))]
+        DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal128) => {
+            let b = read_bytes(input, 16)?;
+            let raw = i128::from_le_bytes(b.try_into().unwrap());
+            let bd = bigdecimal_with_scale(&raw.to_string(), *scale)?;
+            Ok(Value::BigDecimal(Some(Box::new(bd))))
+        }
+        #[cfg(not(any(feature = "rust_decimal", feature = "bigdecimal")))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal128) => {
+            let _ = read_bytes(input, 16)?;
+            Err(Error::Unsupported(
+                "Decimal128 requires the `rust_decimal` or `bigdecimal` feature".into(),
+            ))
+        }
+
+        #[cfg(feature = "bigdecimal")]
         DataTypeNode::Decimal(_precision, scale, DecimalType::Decimal256) => {
             let b = read_bytes(input, 32)?;
             let int256 = Int256::from_le_bytes(b.try_into().unwrap());
             let bd = bigdecimal_with_scale(&int256.to_string(), *scale)?;
             Ok(Value::BigDecimal(Some(Box::new(bd))))
+        }
+        #[cfg(not(feature = "bigdecimal"))]
+        DataTypeNode::Decimal(_, _, DecimalType::Decimal256) => {
+            let _ = read_bytes(input, 32)?;
+            Err(Error::Unsupported(
+                "Decimal256 requires the `bigdecimal` feature".into(),
+            ))
         }
 
         // ── IP addresses ──────────────────────────────────────────────────

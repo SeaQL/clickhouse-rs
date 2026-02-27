@@ -196,6 +196,7 @@ fn try_as_i128(val: &sea_query::Value) -> NumericI128 {
         V::BigUnsigned(Some(v)) => NumericI128::Got(*v as i128),
         V::Float(Some(f)) => f64_truncate_to_i128(*f as f64),
         V::Double(Some(f)) => f64_truncate_to_i128(*f),
+        #[cfg(feature = "rust_decimal")]
         V::Decimal(Some(d)) => {
             use sea_query::prelude::rust_decimal::prelude::ToPrimitive;
             match d.to_i128() {
@@ -203,6 +204,7 @@ fn try_as_i128(val: &sea_query::Value) -> NumericI128 {
                 None => NumericI128::Overflow,
             }
         }
+        #[cfg(feature = "bigdecimal")]
         V::BigDecimal(Some(d)) => {
             use sea_query::prelude::bigdecimal::ToPrimitive;
             match d.to_i128() {
@@ -228,10 +230,12 @@ fn try_as_f64(val: &sea_query::Value) -> Option<f64> {
         V::BigUnsigned(Some(v)) => Some(*v as f64),
         V::Float(Some(f)) => Some(*f as f64),
         V::Double(Some(f)) => Some(*f),
+        #[cfg(feature = "rust_decimal")]
         V::Decimal(Some(d)) => {
             use sea_query::prelude::rust_decimal::prelude::ToPrimitive;
             d.to_f64()
         }
+        #[cfg(feature = "bigdecimal")]
         V::BigDecimal(Some(d)) => {
             use sea_query::prelude::bigdecimal::ToPrimitive;
             d.to_f64()
@@ -276,10 +280,16 @@ fn is_null(val: &sea_query::Value) -> bool {
             | V::String(None)
             | V::Char(None)
             | V::Bytes(None)
-            | V::BigDecimal(None)
-            | V::Decimal(None)
             | V::Json(None)
     );
+    #[cfg(feature = "rust_decimal")]
+    {
+        null = null || matches!(val, V::Decimal(None));
+    }
+    #[cfg(feature = "bigdecimal")]
+    {
+        null = null || matches!(val, V::BigDecimal(None));
+    }
     #[cfg(feature = "chrono")]
     {
         null = null
@@ -322,7 +332,9 @@ fn value_variant_name(val: &sea_query::Value) -> &'static str {
         V::Char(_) => "Char",
         V::Bytes(_) => "Bytes",
         V::Json(_) => "Json",
+        #[cfg(feature = "rust_decimal")]
         V::Decimal(_) => "Decimal",
+        #[cfg(feature = "bigdecimal")]
         V::BigDecimal(_) => "BigDecimal",
         #[cfg(feature = "uuid")]
         V::Uuid(_) => "Uuid",
@@ -338,6 +350,7 @@ fn value_variant_name(val: &sea_query::Value) -> &'static str {
         V::TimeDateTime(_) => "TimeDateTime",
         #[cfg(feature = "time")]
         V::TimeTime(_) => "TimeTime",
+        #[allow(unreachable_patterns)]
         _ => "unknown",
     }
 }
@@ -463,6 +476,7 @@ impl FromValue for Vec<u8> {
     }
 }
 
+#[cfg(feature = "rust_decimal")]
 impl FromValue for sea_query::value::prelude::Decimal {
     fn from_value(val: &sea_query::Value) -> Result<Self, TypeError> {
         use sea_query::Value as V;
@@ -472,6 +486,7 @@ impl FromValue for sea_query::value::prelude::Decimal {
         }
         match val {
             V::Decimal(Some(d)) => return Ok(*d),
+            #[cfg(feature = "bigdecimal")]
             V::BigDecimal(Some(bd)) => {
                 use std::str::FromStr;
                 return Decimal::from_str(&bd.to_string())
@@ -500,6 +515,7 @@ impl FromValue for sea_query::value::prelude::Decimal {
     }
 }
 
+#[cfg(feature = "bigdecimal")]
 impl FromValue for sea_query::value::prelude::BigDecimal {
     fn from_value(val: &sea_query::Value) -> Result<Self, TypeError> {
         use sea_query::Value as V;
@@ -509,6 +525,7 @@ impl FromValue for sea_query::value::prelude::BigDecimal {
         }
         match val {
             V::BigDecimal(Some(bd)) => return Ok((**bd).clone()),
+            #[cfg(feature = "rust_decimal")]
             V::Decimal(Some(d)) => {
                 use std::str::FromStr;
                 return BigDecimal::from_str(&d.to_string())

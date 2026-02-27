@@ -4,7 +4,7 @@
 //! round-trip.
 //!
 //! Run with:
-//!   cargo run --example arrow_sensor_data --features arrow
+//!   cargo run --example arrow_sensor_data --features=arrow,chrono,rust_decimal
 
 use std::env;
 
@@ -14,7 +14,9 @@ use sea_orm_arrow::arrow::{array::RecordBatch, util::pretty};
 const SQL: &str = r#"
     SELECT
         toUInt64(number) + 1                                      AS id,
-        toDateTime('2026-01-01 00:00:00') + (rand() % 86400)      AS recorded_at,
+        toDateTime64('2026-01-01', 6)
+            + toIntervalSecond(rand() % 86400)
+            + toIntervalMillisecond(rand() % 1000)                AS recorded_at,
         toInt32(100 + rand() % 10)                                AS sensor_id,
         -10.0 + randUniform(0.0, 50.0)                            AS temperature,
         toDecimal128(3.0 + toFloat64(rand() % 5000) / 10000.0, 4) AS voltage
@@ -33,7 +35,7 @@ async fn ddl(client: &Client) -> Result<()> {
         .query(&format!(
             "CREATE TABLE {TABLE} (
                 id          UInt64,
-                recorded_at DateTime,
+                recorded_at DateTime64(6),
                 sensor_id   Int32,
                 temperature Float64,
                 voltage     Decimal128(4)

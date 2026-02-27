@@ -100,6 +100,10 @@ name = "row_batch"
 required-features = ["sea-ql"]
 
 [[example]]
+name = "data_row_schema"
+required-features = ["sea-ql", "chrono", "rust_decimal"]
+
+[[example]]
 name = "arrow_batch"
 required-features = ["arrow"]
 

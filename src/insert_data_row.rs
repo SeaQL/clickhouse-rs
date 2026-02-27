@@ -47,7 +47,7 @@ impl Client {
         // Build escaped field list from proto column names.
         let fields: String =
             proto
-                .columns
+                .column_names
                 .iter()
                 .enumerate()
                 .fold(String::new(), |mut s, (i, col)| {
@@ -62,8 +62,8 @@ impl Client {
             let meta = self.get_insert_metadata(table).await?;
 
             // Resolve each DataRow column to its schema column (in DataRow order).
-            let mut ordered_columns: Vec<Column> = Vec::with_capacity(proto.columns.len());
-            for col_name in proto.columns.iter() {
+            let mut ordered_columns: Vec<Column> = Vec::with_capacity(proto.column_names.len());
+            for col_name in proto.column_names.iter() {
                 let idx = meta
                     .column_lookup
                     .get(col_name.as_ref())
@@ -197,14 +197,15 @@ impl Client {
     ) -> Result<DataRowInsert> {
         use std::sync::Arc;
 
-        let columns: Arc<[Arc<str>]> = batch
+        let column_names: Arc<[Arc<str>]> = batch
             .schema()
             .fields()
             .iter()
             .map(|f| Arc::from(f.name().as_str()))
             .collect();
         let proto = DataRow {
-            columns,
+            column_names,
+            column_types: Arc::from([]),
             values: vec![],
         };
         self.insert_data_row(table, &proto).await
@@ -226,7 +227,7 @@ impl DataRowInsert {
     ) -> Result<()> {
         use std::sync::Arc;
 
-        let columns: Arc<[Arc<str>]> = batch
+        let column_names: Arc<[Arc<str>]> = batch
             .schema()
             .fields()
             .iter()
@@ -246,7 +247,8 @@ impl DataRowInsert {
                 .collect::<Result<Vec<_>>>()?;
 
             let data_row = DataRow {
-                columns: columns.clone(),
+                column_names: column_names.clone(),
+                column_types: Arc::from([]),
                 values,
             };
             self.do_write_row(&data_row)?;

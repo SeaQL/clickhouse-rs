@@ -33,9 +33,10 @@ async fn ddl(client: &Client) -> Result<()> {
         .await
 }
 
-fn make_row(columns: Arc<[Arc<str>]>, id: u32, name: &str, score: f64) -> DataRow {
+fn make_row(column_names: Arc<[Arc<str>]>, id: u32, name: &str, score: f64) -> DataRow {
     DataRow {
-        columns,
+        column_names,
+        column_types: Arc::from([]),
         values: vec![
             Value::Unsigned(Some(id)),
             Value::String(Some(name.into())),

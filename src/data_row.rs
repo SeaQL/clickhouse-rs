@@ -15,7 +15,7 @@ use std::sync::Arc;
 ///     .fetch_rows()?;
 ///
 /// while let Some(row) = cursor.next().await? {
-///     for (col, val) in row.columns.iter().zip(&row.values) {
+///     for (col, val) in row.column_names.iter().zip(&row.values) {
 ///         println!("{col}: {val:?}");
 ///     }
 /// }
@@ -24,7 +24,9 @@ use std::sync::Arc;
 #[derive(Debug, Clone, PartialEq)]
 pub struct DataRow {
     /// Column names in schema order, shared with all other rows from the same query.
-    pub columns: Arc<[Arc<str>]>,
+    pub column_names: Arc<[Arc<str>]>,
+    /// ClickHouse data types in schema order, shared with all other rows from the same query.
+    pub column_types: Arc<[clickhouse_types::DataTypeNode]>,
     /// Per-column values decoded from `RowBinaryWithNamesAndTypes`.
     pub values: Vec<sea_query::Value>,
 }
@@ -80,8 +82,8 @@ impl DataRow {
 ///     .fetch_rows()?;
 ///
 /// while let Some(batch) = cursor.next_batch(32).await? {
-///     println!("{} rows, {} columns", batch.num_rows, batch.columns.len());
-///     for (name, col) in batch.columns.iter().zip(&batch.column_data) {
+///     println!("{} rows, {} columns", batch.num_rows, batch.column_names.len());
+///     for (name, col) in batch.column_names.iter().zip(&batch.column_data) {
 ///         println!("  {name}: {} values", col.len());
 ///     }
 /// }
@@ -90,8 +92,10 @@ impl DataRow {
 #[derive(Debug, Clone, PartialEq)]
 pub struct RowBatch {
     /// Column names in schema order, shared with all other batches from the same query.
-    pub columns: Arc<[Arc<str>]>,
-    /// Per-column value vectors; `column_data[i]` holds all values for `columns[i]`.
+    pub column_names: Arc<[Arc<str>]>,
+    /// ClickHouse data types in schema order, shared with all other batches from the same query.
+    pub column_types: Arc<[clickhouse_types::DataTypeNode]>,
+    /// Per-column value vectors; `column_data[i]` holds all values for `column_names[i]`.
     ///
     /// Every inner `Vec` has exactly `num_rows` entries.
     pub column_data: Vec<Vec<sea_query::Value>>,
@@ -152,7 +156,7 @@ impl ColumnIndex for usize {
 
 impl ColumnIndex for &str {
     fn get_index(&self, row: &DataRow) -> Result<usize, TypeError> {
-        row.columns
+        row.column_names
             .iter()
             .position(|c| c.as_ref() == *self)
             .ok_or_else(|| TypeError::ColumnNotFound(self.to_string()))

@@ -37,7 +37,7 @@ use clickhouse_types::data_types::Column;
 ///     name String,
 ///     created_at DateTime
 /// ) ENGINE = MergeTree()
-/// ORDER BY (id)"#);
+/// PRIMARY KEY (id)"#);
 /// ```
 ///
 /// ReplacingMergeTree with settings and LowCardinality columns:
@@ -64,7 +64,7 @@ use clickhouse_types::data_types::Column;
 ///     status LowCardinality(String),
 ///     value Nullable(Float64)
 /// ) ENGINE = ReplacingMergeTree()
-/// ORDER BY (ts, sensor_id)
+/// PRIMARY KEY (ts, sensor_id)
 /// SETTINGS index_granularity = 8192"#);
 /// ```
 ///
@@ -87,13 +87,14 @@ use clickhouse_types::data_types::Column;
 ///     id UInt64,
 ///     tag LowCardinality(Nullable(String))
 /// ) ENGINE = MergeTree()
-/// ORDER BY (id)"#);
+/// PRIMARY KEY (id)"#);
 /// ```
 #[derive(Debug, Clone)]
 pub struct ClickHouseSchema {
     pub(crate) table_name: String,
     pub(crate) columns: Vec<SchemaColumn>,
     pub(crate) engine: Engine,
+    primary_key: Vec<String>,
     order_by: Vec<String>,
     partition_by: Option<String>,
     settings: Vec<(String, String)>,
@@ -146,6 +147,7 @@ impl Default for ClickHouseSchema {
             table_name: String::new(),
             columns: Vec::new(),
             engine: Engine::MergeTree,
+            primary_key: Vec::new(),
             order_by: Vec::new(),
             partition_by: None,
             settings: Vec::new(),
@@ -190,6 +192,53 @@ impl ClickHouseSchema {
         }
     }
 
+    /// Creates a new schema builder from a [`DataRow`](crate::data_row::DataRow),
+    /// using its column names and types.
+    #[cfg(feature = "sea-ql")]
+    pub fn from_data_row(row: &crate::data_row::DataRow) -> Self {
+        Self::from_names_and_types(&row.column_names, &row.column_types)
+    }
+
+    /// Creates a new schema builder from a [`RowBatch`](crate::data_row::RowBatch),
+    /// using its column names and types.
+    #[cfg(feature = "sea-ql")]
+    pub fn from_row_batch(batch: &crate::data_row::RowBatch) -> Self {
+        Self::from_names_and_types(&batch.column_names, &batch.column_types)
+    }
+
+    #[cfg(feature = "sea-ql")]
+    fn from_names_and_types(names: &[std::sync::Arc<str>], types: &[DataTypeNode]) -> Self {
+        let columns = names
+            .iter()
+            .zip(types.iter())
+            .map(|(name, dt)| Self::decompose_type(name.as_ref(), dt.clone()))
+            .collect();
+        Self {
+            columns,
+            ..Default::default()
+        }
+    }
+
+    /// Unwraps `LowCardinality` and `Nullable` wrappers from a
+    /// [`DataTypeNode`] into [`SchemaColumn`] flags.
+    #[cfg(feature = "sea-ql")]
+    fn decompose_type(name: &str, dt: DataTypeNode) -> SchemaColumn {
+        let (dt, low_cardinality) = match dt {
+            DataTypeNode::LowCardinality(inner) => (*inner, true),
+            other => (other, false),
+        };
+        let (dt, nullable) = match dt {
+            DataTypeNode::Nullable(inner) => (*inner, true),
+            other => (other, false),
+        };
+        SchemaColumn {
+            name: name.to_string(),
+            data_type: dt,
+            nullable,
+            low_cardinality,
+        }
+    }
+
     /// Set the table name.
     pub fn table_name(&mut self, name: impl Into<String>) -> &mut Self {
         self.table_name = name.into();
@@ -220,8 +269,21 @@ impl ClickHouseSchema {
         self
     }
 
-    /// Set the `ORDER BY` / primary key columns.
+    /// Set the `PRIMARY KEY` columns.
+    ///
+    /// In ClickHouse, if no separate [`order_by`](Self::order_by) is specified,
+    /// the primary key also determines the `ORDER BY`.
     pub fn primary_key(&mut self, keys: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
+        self.primary_key = keys.into_iter().map(Into::into).collect();
+        self
+    }
+
+    /// Set the `ORDER BY` columns.
+    ///
+    /// When both `primary_key` and `order_by` are set, the primary key must
+    /// be a prefix of the order-by key. When only `order_by` is set,
+    /// ClickHouse uses it as the primary key as well.
+    pub fn order_by(&mut self, keys: impl IntoIterator<Item = impl Into<String>>) -> &mut Self {
         self.order_by = keys.into_iter().map(Into::into).collect();
         self
     }
@@ -330,11 +392,22 @@ impl Display for ClickHouseSchema {
         write!(f, ") ENGINE = {}", self.engine)?;
 
         if self.engine.is_merge_tree_family() {
-            f.write_char('\n')?;
-            if self.order_by.is_empty() {
-                f.write_str("ORDER BY tuple()")?;
-            } else {
-                write!(f, "ORDER BY ({})", self.order_by.join(", "))?;
+            let has_pk = !self.primary_key.is_empty();
+            let has_ob = !self.order_by.is_empty();
+            match (has_pk, has_ob) {
+                (true, true) => {
+                    write!(f, "\nORDER BY ({})", self.order_by.join(", "))?;
+                    write!(f, "\nPRIMARY KEY ({})", self.primary_key.join(", "))?;
+                }
+                (true, false) => {
+                    write!(f, "\nPRIMARY KEY ({})", self.primary_key.join(", "))?;
+                }
+                (false, true) => {
+                    write!(f, "\nORDER BY ({})", self.order_by.join(", "))?;
+                }
+                (false, false) => {
+                    f.write_str("\nORDER BY tuple()")?;
+                }
             }
         }
 
@@ -411,7 +484,7 @@ mod tests {
                     name String,
                     value Float64
                 ) ENGINE = MergeTree()
-                ORDER BY (id)
+                PRIMARY KEY (id)
             "#
             )
         );
@@ -449,7 +522,7 @@ mod tests {
                     sensor_id Int32,
                     temp Float64
                 ) ENGINE = ReplacingMergeTree()
-                ORDER BY (ts, sensor_id)
+                PRIMARY KEY (ts, sensor_id)
                 SETTINGS index_granularity = 8192
             "#
             )
@@ -616,9 +689,67 @@ mod tests {
                     status LowCardinality(String),
                     tag LowCardinality(Nullable(String))
                 ) ENGINE = MergeTree()
-                ORDER BY (id)
+                PRIMARY KEY (id)
             "#
             )
         );
+    }
+
+    #[test]
+    fn test_from_row_batch() {
+        use crate::data_row::RowBatch;
+        use std::sync::Arc;
+
+        let batch = RowBatch {
+            column_names: Arc::from([Arc::from("id"), Arc::from("tag"), Arc::from("value")]),
+            column_types: Arc::from([
+                DataTypeNode::UInt64,
+                DataTypeNode::LowCardinality(Box::new(DataTypeNode::Nullable(Box::new(
+                    DataTypeNode::String,
+                )))),
+                DataTypeNode::Nullable(Box::new(DataTypeNode::Float64)),
+            ]),
+            column_data: vec![],
+            num_rows: 0,
+        };
+
+        let ddl = ClickHouseSchema::from_row_batch(&batch)
+            .table_name("events")
+            .primary_key(["id"])
+            .to_string();
+
+        assert_eq!(
+            ddl,
+            trim_indent(
+                r#"
+                CREATE TABLE events (
+                    id UInt64,
+                    tag LowCardinality(Nullable(String)),
+                    value Nullable(Float64)
+                ) ENGINE = MergeTree()
+                PRIMARY KEY (id)
+            "#
+            )
+        );
+    }
+
+    #[test]
+    fn test_from_data_row() {
+        use crate::data_row::DataRow;
+        use std::sync::Arc;
+
+        let row = DataRow {
+            column_names: Arc::from([Arc::from("ts"), Arc::from("sensor_id")]),
+            column_types: Arc::from([DataTypeNode::DateTime(None), DataTypeNode::Int32]),
+            values: vec![],
+        };
+
+        let schema = ClickHouseSchema::from_data_row(&row);
+        assert_eq!(schema.columns.len(), 2);
+        assert_eq!(schema.columns[0].name, "ts");
+        assert_eq!(schema.columns[0].data_type, DataTypeNode::DateTime(None));
+        assert!(!schema.columns[0].nullable);
+        assert_eq!(schema.columns[1].name, "sensor_id");
+        assert_eq!(schema.columns[1].data_type, DataTypeNode::Int32);
     }
 }

@@ -23,10 +23,10 @@ async fn test_column_layout(client: &Client) -> Result<()> {
     );
 
     assert_eq!(batch.num_rows, 6);
-    assert_eq!(batch.columns.len(), 2);
+    assert_eq!(batch.column_names.len(), 2);
     assert_eq!(batch.column_data.len(), 2);
 
-    let col_names: Vec<&str> = batch.columns.iter().map(|c| c.as_ref()).collect();
+    let col_names: Vec<&str> = batch.column_names.iter().map(|c| c.as_ref()).collect();
     assert_eq!(col_names, ["n", "doubled"]);
 
     // column_data[0] = all values of "n"
@@ -121,12 +121,12 @@ async fn test_columns_shared(client: &Client) -> Result<()> {
     // Both batches should carry the same column names.
     assert_eq!(
         batch1
-            .columns
+            .column_names
             .iter()
             .map(|c| c.as_ref())
             .collect::<Vec<_>>(),
         batch2
-            .columns
+            .column_names
             .iter()
             .map(|c| c.as_ref())
             .collect::<Vec<_>>(),
@@ -157,7 +157,7 @@ async fn test_mixed_types(client: &Client) -> Result<()> {
 
     assert_eq!(batch.num_rows, 4);
 
-    let col_names: Vec<&str> = batch.columns.iter().map(|c| c.as_ref()).collect();
+    let col_names: Vec<&str> = batch.column_names.iter().map(|c| c.as_ref()).collect();
     assert_eq!(col_names, ["id", "label", "is_even"]);
 
     // id column: UInt64 values 0..4

@@ -155,7 +155,7 @@ impl Query {
     ///     .fetch_rows()?;
     ///
     /// while let Some(row) = cursor.next().await? {
-    ///     for (col, val) in row.columns.iter().zip(&row.values) {
+    ///     for (col, val) in row.column_names.iter().zip(&row.values) {
     ///         println!("{col}: {val:?}");
     ///     }
     /// }

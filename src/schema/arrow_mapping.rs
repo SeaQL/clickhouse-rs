@@ -248,7 +248,7 @@ mod tests {
                     temperature Nullable(Float64),
                     voltage Decimal(38, 4)
                 ) ENGINE = ReplacingMergeTree()
-                ORDER BY (recorded_at, sensor_id)
+                PRIMARY KEY (recorded_at, sensor_id)
                 SETTINGS index_granularity = 8192
             "#
             )

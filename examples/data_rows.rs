@@ -28,12 +28,18 @@ async fn test_types(client: &Client) -> Result<()> {
     let row = cursor.next().await?.expect("expected one row");
     assert!(cursor.next().await?.is_none(), "expected exactly one row");
 
-    let DataRow { columns, values } = &row;
+    let DataRow {
+        column_names,
+        values,
+        ..
+    } = &row;
 
-    let col_names: Vec<&str> = columns.iter().map(|c| c.as_ref()).collect();
+    let col_names: Vec<&str> = column_names.iter().map(|c| c.as_ref()).collect();
     assert_eq!(
         col_names,
-        ["u8_col", "i32_col", "f64_col", "str_col", "bool_col", "null_col", "arr_col"]
+        [
+            "u8_col", "i32_col", "f64_col", "str_col", "bool_col", "null_col", "arr_col"
+        ]
     );
 
     assert_eq!(values[0], Value::TinyUnsigned(Some(1)));
@@ -71,7 +77,7 @@ async fn test_chrono_types(client: &Client) -> Result<()> {
     let row = cursor.next().await?.expect("expected one row");
     assert!(cursor.next().await?.is_none(), "expected exactly one row");
 
-    let DataRow { columns: _, values } = &row;
+    let DataRow { values, .. } = &row;
 
     assert_eq!(
         values[0],
@@ -105,7 +111,7 @@ async fn test_time_types(client: &Client) -> Result<()> {
     let row = cursor.next().await?.expect("expected one row");
     assert!(cursor.next().await?.is_none(), "expected exactly one row");
 
-    let DataRow { columns: _, values } = &row;
+    let DataRow { values, .. } = &row;
 
     let expected_date =
         time::Date::from_calendar_date(2024, time::Month::January, 15).expect("valid date");
@@ -131,7 +137,7 @@ async fn test_numbers(client: &Client) -> Result<()> {
 
     assert_eq!(rows.len(), 5);
 
-    let col_names: Vec<&str> = rows[0].columns.iter().map(|c| c.as_ref()).collect();
+    let col_names: Vec<&str> = rows[0].column_names.iter().map(|c| c.as_ref()).collect();
     assert_eq!(col_names, ["number", "squared"]);
 
     for (i, row) in rows.iter().enumerate() {
@@ -185,7 +191,7 @@ async fn test_math_functions(client: &Client) -> Result<()> {
     let row = cursor.next().await?.expect("expected one row");
     assert!(cursor.next().await?.is_none());
 
-    let DataRow { columns: _, values } = &row;
+    let DataRow { values, .. } = &row;
 
     // sqrt(UInt64) -> Float64
     assert_eq!(values[0], Value::Double(Some(3.0)));
@@ -219,7 +225,7 @@ async fn test_date_functions(client: &Client) -> Result<()> {
     let row = cursor.next().await?.expect("expected one row");
     assert!(cursor.next().await?.is_none());
 
-    let DataRow { columns: _, values } = &row;
+    let DataRow { values, .. } = &row;
 
     // toYear -> UInt16
     assert_eq!(values[0], Value::SmallUnsigned(Some(2024)));
@@ -257,7 +263,7 @@ async fn test_type_promotion(client: &Client) -> Result<()> {
     let row = cursor.next().await?.expect("expected one row");
     assert!(cursor.next().await?.is_none());
 
-    let DataRow { columns: _, values } = &row;
+    let DataRow { values, .. } = &row;
 
     // UInt8 + UInt16 -> UInt32 (ClickHouse promotes past UInt16)
     assert_eq!(values[0], Value::Unsigned(Some(2)));
@@ -299,7 +305,7 @@ async fn test_decimal_types(client: &Client) -> Result<()> {
     let row = cursor.next().await?.expect("expected one row");
     assert!(cursor.next().await?.is_none());
 
-    let DataRow { columns: _, values } = &row;
+    let DataRow { values, .. } = &row;
 
     assert_eq!(
         values[0],
@@ -327,7 +333,7 @@ async fn test_decimals(client: &Client) -> Result<()> {
     let row = cursor.next().await?.expect("expected one row");
     assert!(cursor.next().await?.is_none());
 
-    let DataRow { columns: _, values } = &row;
+    let DataRow { values, .. } = &row;
 
     let expected: Decimal = "3.1415926535897932384626433833".parse().unwrap();
     assert_eq!(values[0], Value::Decimal(Some(expected)));

@@ -86,7 +86,7 @@ impl DataRowCursor {
             .as_ref()
             .expect("just initialised")
             .clone();
-        let columns = self.columns.as_ref().expect("just initialised").clone();
+        let column_names = self.columns.as_ref().expect("just initialised").clone();
 
         loop {
             if self.bytes.remaining() > 0 {
@@ -96,7 +96,11 @@ impl DataRowCursor {
                         // `set_remaining` takes `&self` (interior Cell), so holding
                         // the immutable `slice` borrow is fine here.
                         self.bytes.set_remaining(slice.len());
-                        return Ok(Some(DataRow { columns, values }));
+                        return Ok(Some(DataRow {
+                            column_names,
+                            column_types,
+                            values,
+                        }));
                     }
                     Err(Error::NotEnoughData) => {
                         // Fall through to fetch more data below.
@@ -150,9 +154,11 @@ impl DataRowCursor {
             return Ok(None);
         }
 
-        let columns = self.columns.as_ref().expect("header was read").clone();
+        let column_names = self.columns.as_ref().expect("header was read").clone();
+        let column_types = self.column_types.as_ref().expect("header was read").clone();
         Ok(Some(RowBatch {
-            columns,
+            column_names,
+            column_types,
             column_data,
             num_rows,
         }))

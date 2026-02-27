@@ -1,13 +1,15 @@
+#[cfg(any(feature = "rust_decimal", feature = "bigdecimal"))]
+use sea_orm_arrow::arrow::array::Decimal128Array;
+#[cfg(feature = "bigdecimal")]
+use sea_orm_arrow::arrow::array::Decimal256Array;
 #[cfg(any(feature = "chrono", feature = "time"))]
 use sea_orm_arrow::arrow::array::{
     Date32Array, Date64Array, Time32MillisecondArray, Time32SecondArray, Time64MicrosecondArray,
     Time64NanosecondArray, TimestampMicrosecondArray, TimestampMillisecondArray,
     TimestampNanosecondArray, TimestampSecondArray,
 };
-#[cfg(any(feature = "rust_decimal", feature = "bigdecimal"))]
-use sea_orm_arrow::arrow::array::Decimal128Array;
 #[cfg(feature = "bigdecimal")]
-use sea_orm_arrow::arrow::array::Decimal256Array;
+use sea_orm_arrow::arrow::datatypes::i256;
 use sea_orm_arrow::arrow::{
     array::{
         Array, BinaryArray, BooleanArray, FixedSizeBinaryArray, Float32Array, Float64Array,
@@ -16,8 +18,6 @@ use sea_orm_arrow::arrow::{
     },
     datatypes::{DataType, TimeUnit},
 };
-#[cfg(feature = "bigdecimal")]
-use sea_orm_arrow::arrow::datatypes::i256;
 use sea_query::Value;
 #[cfg(feature = "rust_decimal")]
 use sea_query::prelude::Decimal;

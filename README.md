@@ -165,7 +165,7 @@ while let Some(batch) = cursor.next_arrow_batch(1000).await? {
 ```
 
 ```
-$ cargo run --example arrow_sensor_data --features=arrow,chrono
+$ cargo run --example arrow_sensor_data --features=arrow,rust_decimal,chrono
 +----+---------------------+-----------+---------------------+---------+
 | id | recorded_at         | sensor_id | temperature         | voltage |
 +----+---------------------+-----------+---------------------+---------+

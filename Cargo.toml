@@ -105,11 +105,11 @@ required-features = ["arrow"]
 
 [[example]]
 name = "arrow_sensor_data"
-required-features = ["arrow"]
+required-features = ["arrow", "rust_decimal"]
 
 [[example]]
 name = "arrow_insert"
-required-features = ["arrow"]
+required-features = ["arrow", "rust_decimal", "bigdecimal"]
 
 [profile.release]
 debug = true
@@ -123,6 +123,8 @@ uuid = ["dep:uuid", "sea-query?/with-uuid"]
 time = ["dep:time", "sea-query?/with-time", "sea-orm-arrow?/with-time"]
 lz4 = ["dep:lz4_flex", "dep:cityhash-rs"]
 chrono = ["dep:chrono", "sea-query?/with-chrono", "sea-orm-arrow?/with-chrono"]
+rust_decimal = ["sea-query?/with-rust_decimal", "sea-orm-arrow?/with-rust_decimal"]
+bigdecimal = ["sea-query?/with-bigdecimal", "sea-orm-arrow?/with-bigdecimal"]
 futures03 = []
 sea-ql = ["sea-query"]
 arrow = ["sea-orm-arrow", "sea-ql"]
@@ -178,14 +180,10 @@ uuid = { version = "1", optional = true }
 time = { version = "0.3", optional = true }
 chrono = { version = "0.4", optional = true, features = ["serde"] }
 sea-query = { version = "1.0.0-rc", optional = true, default-features = false, features = [
-    "with-bigdecimal",
     "with-json",
-    "with-rust_decimal",
 ] }
 sea-orm-arrow = { version = "2.0.0-rc", optional = true, features = [
     "prettyprint",
-    "with-bigdecimal",
-    "with-rust_decimal",
 ] }
 bstr = { version = "1.11.0", default-features = false }
 quanta = { version = "0.12", optional = true }

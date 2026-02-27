@@ -8,7 +8,7 @@
 
 use clickhouse::{Client, DataRow, error::Result};
 use sea_query::Value;
-use sea_query::value::prelude::{BigDecimal, Decimal, serde_json};
+use sea_query::value::prelude::serde_json;
 
 async fn test_types(client: &Client) -> Result<()> {
     let mut cursor = client
@@ -19,7 +19,6 @@ async fn test_types(client: &Client) -> Result<()> {
                 3.14::Float64                            AS f64_col,
                 'hello'::String                          AS str_col,
                 true::Bool                               AS bool_col,
-                toDecimal64(123.45, 2)                   AS dec_col,
                 NULL::Nullable(Int32)                    AS null_col,
                 ['a', 'b', 'c']::Array(String)           AS arr_col
             ",
@@ -34,9 +33,7 @@ async fn test_types(client: &Client) -> Result<()> {
     let col_names: Vec<&str> = columns.iter().map(|c| c.as_ref()).collect();
     assert_eq!(
         col_names,
-        [
-            "u8_col", "i32_col", "f64_col", "str_col", "bool_col", "dec_col", "null_col", "arr_col"
-        ]
+        ["u8_col", "i32_col", "f64_col", "str_col", "bool_col", "null_col", "arr_col"]
     );
 
     assert_eq!(values[0], Value::TinyUnsigned(Some(1)));
@@ -45,16 +42,10 @@ async fn test_types(client: &Client) -> Result<()> {
     assert_eq!(values[3], Value::String(Some("hello".into())));
     assert_eq!(values[4], Value::Bool(Some(true)));
 
-    assert_eq!(
-        values[5],
-        Value::Decimal(Some(Decimal::from_i128_with_scale(12345, 2)))
-    );
-    assert_eq!(values[5].to_string(), "123.45");
-
-    assert_eq!(values[6], Value::Int(None));
+    assert_eq!(values[5], Value::Int(None));
 
     let expected_arr = serde_json::json!(["a", "b", "c"]);
-    assert_eq!(values[7], Value::Json(Some(Box::new(expected_arr))));
+    assert_eq!(values[6], Value::Json(Some(Box::new(expected_arr))));
 
     for value in values {
         println!("{value:?}");
@@ -285,15 +276,45 @@ async fn test_type_promotion(client: &Client) -> Result<()> {
     assert_eq!(row.try_get::<f64, _>(0)?, 2.0);
     assert_eq!(row.try_get::<f32, _>(1)?, 2f32);
     assert_eq!(row.try_get::<f64, _>(1)?, 2.0);
-    assert_eq!(row.try_get::<Decimal, _>(0)?, 2.into());
-    assert_eq!(row.try_get::<Decimal, _>(1)?, 2.into());
+    #[cfg(feature = "rust_decimal")]
+    {
+        use sea_query::value::prelude::Decimal;
+        assert_eq!(row.try_get::<Decimal, _>(0)?, 2.into());
+        assert_eq!(row.try_get::<Decimal, _>(1)?, 2.into());
+    }
     assert_eq!(row.try_get::<String, _>("cond_str")?, "no".to_owned());
 
     println!("test_type_promotion: OK");
     Ok(())
 }
 
+#[cfg(feature = "rust_decimal")]
+async fn test_decimal_types(client: &Client) -> Result<()> {
+    use sea_query::value::prelude::Decimal;
+
+    let mut cursor = client
+        .query("SELECT toDecimal64(123.45, 2) AS dec_col")
+        .fetch_rows()?;
+
+    let row = cursor.next().await?.expect("expected one row");
+    assert!(cursor.next().await?.is_none());
+
+    let DataRow { columns: _, values } = &row;
+
+    assert_eq!(
+        values[0],
+        Value::Decimal(Some(Decimal::from_i128_with_scale(12345, 2)))
+    );
+    assert_eq!(values[0].to_string(), "123.45");
+
+    println!("test_decimal_types: OK");
+    Ok(())
+}
+
+#[cfg(all(feature = "rust_decimal", feature = "bigdecimal"))]
 async fn test_decimals(client: &Client) -> Result<()> {
+    use sea_query::value::prelude::{BigDecimal, Decimal};
+
     let mut cursor = client
         .query(
             "SELECT
@@ -308,11 +329,9 @@ async fn test_decimals(client: &Client) -> Result<()> {
 
     let DataRow { columns: _, values } = &row;
 
-    // Decimal128 -> Decimal
     let expected: Decimal = "3.1415926535897932384626433833".parse().unwrap();
     assert_eq!(values[0], Value::Decimal(Some(expected)));
 
-    // Decimal256 -> BigDecimal
     let expected: BigDecimal = "3.14159265358979323846264338327950288419716939937510"
         .parse()
         .unwrap();
@@ -344,6 +363,11 @@ async fn main() -> Result<()> {
     test_math_functions(&client).await?;
     test_date_functions(&client).await?;
     test_type_promotion(&client).await?;
+
+    #[cfg(feature = "rust_decimal")]
+    test_decimal_types(&client).await?;
+
+    #[cfg(all(feature = "rust_decimal", feature = "bigdecimal"))]
     test_decimals(&client).await?;
 
     #[cfg(feature = "chrono")]

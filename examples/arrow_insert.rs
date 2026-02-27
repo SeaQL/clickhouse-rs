@@ -123,7 +123,8 @@ fn expected_bd(raw: i64, scale: i8) -> Value {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = Client::default().with_url("http://localhost:18123");
+    let client = Client::default()
+        .with_url(std::env::var("CH_URL").unwrap_or("http://localhost:18123".to_owned()));
 
     ddl(&client).await?;
 

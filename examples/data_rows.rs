@@ -360,7 +360,8 @@ async fn test_empty_result(client: &Client) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = Client::default().with_url("http://localhost:18123");
+    let client = Client::default()
+        .with_url(std::env::var("CH_URL").unwrap_or("http://localhost:18123".to_owned()));
 
     test_types(&client).await?;
     test_numbers(&client).await?;

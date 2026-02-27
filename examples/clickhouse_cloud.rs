@@ -2,7 +2,6 @@ use clickhouse::Client;
 use clickhouse::Row;
 use clickhouse::sql::Identifier;
 use serde::{Deserialize, Serialize};
-use std::env;
 
 // This example requires three environment variables with your instance credentials to be set
 //

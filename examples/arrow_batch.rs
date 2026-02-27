@@ -280,7 +280,8 @@ async fn test_schema_shared(client: &Client) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = Client::default().with_url("http://localhost:18123");
+    let client = Client::default()
+        .with_url(std::env::var("CH_URL").unwrap_or("http://localhost:18123".to_owned()));
 
     test_column_layout(&client).await?;
     test_multiple_batches(&client).await?;

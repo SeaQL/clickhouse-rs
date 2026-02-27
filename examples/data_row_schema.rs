@@ -11,8 +11,6 @@
 //! Run with:
 //!   cargo run --example data_row_schema --features sea-ql,chrono,rust_decimal
 
-use std::env;
-
 use clickhouse::schema::{ClickHouseSchema, Engine};
 use clickhouse::{Client, DataRow, error::Result};
 
@@ -35,7 +33,7 @@ const QUERY: &str = r#"
 #[tokio::main]
 async fn main() -> Result<()> {
     let client = Client::default()
-        .with_url(env::var("CH_URL").unwrap_or("http://localhost:18123".to_owned()));
+        .with_url(std::env::var("CH_URL").unwrap_or("http://localhost:18123".to_owned()));
 
     // ── 1. Query rows dynamically ────────────────────────────────────────────
     println!("Fetching 20 synthetic rows…");
@@ -107,15 +105,7 @@ PRIMARY KEY (recorded_at, device)"#
     println!("Inserted {} rows.", rows.len());
 
     // ── 5. Select back and verify exact round-trip ───────────────────────────
-    let select_sql = format!(
-        "SELECT {} FROM {TABLE} FINAL ORDER BY id",
-        rows[0]
-            .column_names
-            .iter()
-            .map(|c| c.as_ref())
-            .collect::<Vec<_>>()
-            .join(", ")
-    );
+    let select_sql = format!("SELECT * FROM {TABLE} FINAL ORDER BY id");
     let mut cursor = client.query(&select_sql).fetch_rows()?;
     let mut result: Vec<DataRow> = Vec::new();
     while let Some(row) = cursor.next().await? {

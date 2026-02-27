@@ -33,7 +33,9 @@ async fn test_types(client: &Client) -> Result<()> {
     let col_names: Vec<&str> = columns.iter().map(|c| c.as_ref()).collect();
     assert_eq!(
         col_names,
-        ["u8_col", "i32_col", "f64_col", "str_col", "bool_col", "null_col", "arr_col"]
+        [
+            "u8_col", "i32_col", "f64_col", "str_col", "bool_col", "null_col", "arr_col"
+        ]
     );
 
     assert_eq!(values[0], Value::TinyUnsigned(Some(1)));

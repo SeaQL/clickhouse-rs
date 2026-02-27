@@ -1,4 +1,4 @@
-# Clickhouse for SeaQL
+# ClickHouse for SeaQL
 
 A ClickHouse client that integrates with the [SeaQL](https://github.com/SeaQL/sea-orm/) ecosystem.
 Query results are decoded into `sea_query::Value`, giving you first-class support for
@@ -34,7 +34,7 @@ sea-clickhouse = { version = "0.14", features = ["arrow"] }
 `fetch_rows()` decodes every column into the matching `sea_query::Value` variant:
 integers, floats, strings, booleans, dates, decimals, arrays - all without a schema struct.
 
-```rust
+```rust,ignore
 use clickhouse::{Client, DataRow, error::Result};
 use sea_query::Value;
 use sea_query::value::prelude::{BigDecimal, Decimal, NaiveDate, NaiveDateTime, NaiveTime};
@@ -89,7 +89,7 @@ assert_eq!(values[8], Value::Json(Some(Box::new(expected_arr))));
 
 No need to guess the resulting type of a SQL expression, it can be converted to the desired type on runtime:
 
-```rust
+```rust,ignore
 let mut cursor = client
     .query("SELECT 1::UInt32 + 1::Float32 AS value") // what's the output type?
     .fetch_rows()?;
@@ -106,7 +106,7 @@ assert_eq!(row.try_get::<Decimal, _>("value")?, 2.into()); // get by column name
 
 Build `DataRow`s with a shared column list and insert them in a single streaming request.
 
-```rust
+```rust,ignore
 use std::sync::Arc;
 use clickhouse::{Client, DataRow};
 use sea_query::Value;
@@ -137,7 +137,7 @@ insert.end().await?;
 `next_batch(max_rows)` accumulates rows column-by-column into a `RowBatch`:
 one `Vec<Value>` per column, making it a natural bridge toward Apache Arrow.
 
-```rust
+```rust,ignore
 let mut cursor = client
     .query("SELECT number::UInt64 AS n, number * 2 AS doubled FROM system.numbers LIMIT 1000")
     .fetch_rows()?;
@@ -154,7 +154,7 @@ while let Some(batch) = cursor.next_batch(256).await? {
 `next_arrow_batch(chunk_size)` streams ClickHouse results as `arrow::RecordBatch`es -
 ready for DataFusion, Polars, Parquet export, or any Arrow consumer.
 
-```rust
+```rust,ignore
 use sea_orm_arrow::arrow::util::pretty;
 
 let mut cursor = client.query("SELECT * FROM sensor_data").fetch_rows()?;
@@ -164,7 +164,7 @@ while let Some(batch) = cursor.next_arrow_batch(1000).await? {
 }
 ```
 
-```
+```ignore
 $ cargo run --example arrow_sensor_data --features=arrow,rust_decimal,chrono
 +----+---------------------+-----------+---------------------+---------+
 | id | recorded_at         | sensor_id | temperature         | voltage |
@@ -186,7 +186,7 @@ $ cargo run --example arrow_sensor_data --features=arrow,rust_decimal,chrono
 
 Build an Arrow `RecordBatch` [using SeaORM](https://github.com/SeaQL/sea-orm/blob/master/examples/parquet_example/src/main.rs) and insert it directly into ClickHouse.
 
-```rust
+```rust,ignore
 use sea_orm::ArrowSchema;
 
 mod measurement {

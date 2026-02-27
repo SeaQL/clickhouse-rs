@@ -36,6 +36,7 @@ pub mod sql;
 #[cfg(feature = "test-util")]
 pub mod test;
 
+pub mod schema;
 pub mod types;
 
 #[cfg(feature = "arrow")]

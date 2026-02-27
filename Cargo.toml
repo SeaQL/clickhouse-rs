@@ -15,7 +15,7 @@ name = "clickhouse"
 path = "src/lib.rs"
 
 [workspace]
-members = ["macros", "types"]
+members = ["macros", "types", "sea-orm-arrow-example"]
 # `rust-version`-aware dependency resolution;
 # applies to all workspace members
 resolver = "3"

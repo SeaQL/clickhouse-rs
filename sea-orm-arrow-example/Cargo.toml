@@ -1,0 +1,18 @@
+[package]
+name = "sea-orm-arrow-example"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+sea-clickhouse = { path = "..", features = ["arrow", "chrono", "rust_decimal"] }
+sea-orm = { version = "2.0.0-rc", features = [
+    "with-arrow",
+    "with-chrono",
+    "with-rust_decimal",
+] }
+sea-orm-arrow = { version = "2.0.0-rc" }
+chrono = "0.4"
+tokio = { version = "1", features = ["full"] }

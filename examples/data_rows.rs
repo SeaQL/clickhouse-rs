@@ -299,7 +299,14 @@ async fn test_decimal_types(client: &Client) -> Result<()> {
     use sea_query::value::prelude::Decimal;
 
     let mut cursor = client
-        .query("SELECT toDecimal64(123.45, 2) AS dec_col")
+        .query(
+            "SELECT
+                toDecimal64(123.45, 2)               AS dec64_col,
+                toDecimal64(-0.0001, 4)              AS dec64_neg,
+                toDecimal64('999999999999.9999', 4)  AS dec64_large,
+                toDecimal64(0, 6)                    AS dec64_zero
+            ",
+        )
         .fetch_rows()?;
 
     let row = cursor.next().await?.expect("expected one row");
@@ -311,7 +318,21 @@ async fn test_decimal_types(client: &Client) -> Result<()> {
         values[0],
         Value::Decimal(Some(Decimal::from_i128_with_scale(12345, 2)))
     );
+    assert_eq!(
+        values[1],
+        Value::Decimal(Some(Decimal::from_i128_with_scale(-1, 4)))
+    );
+    assert_eq!(
+        values[2],
+        Value::Decimal(Some(Decimal::from_i128_with_scale(9999999999999999, 4)))
+    );
+    assert_eq!(
+        values[3],
+        Value::Decimal(Some(Decimal::from_i128_with_scale(0, 6)))
+    );
+
     assert_eq!(values[0].to_string(), "123.45");
+    assert_eq!(values[3].to_string(), "0.000000");
 
     println!("test_decimal_types: OK");
     Ok(())

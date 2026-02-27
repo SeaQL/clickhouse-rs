@@ -13,3 +13,4 @@ cargo run --example arrow_insert --features=arrow,rust_decimal,bigdecimal
 cargo run --example arrow_sensor_data --features=arrow,chrono,rust_decimal
 cargo run --example data_row_schema --features=sea-ql,chrono,rust_decimal
 cargo run --example arrow_batch_schema --features arrow,chrono,rust_decimal
+cargo run -p sea-orm-arrow-example

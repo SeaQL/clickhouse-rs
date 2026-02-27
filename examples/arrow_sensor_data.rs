@@ -6,8 +6,6 @@
 //! Run with:
 //!   cargo run --example arrow_sensor_data --features=arrow,chrono,rust_decimal
 
-use std::env;
-
 use clickhouse::{Client, error::Result};
 use sea_orm_arrow::arrow::{array::RecordBatch, util::pretty};
 
@@ -50,7 +48,7 @@ async fn ddl(client: &Client) -> Result<()> {
 #[tokio::main]
 async fn main() -> Result<()> {
     let client = Client::default()
-        .with_url(env::var("CH_URL").unwrap_or("http://localhost:18123".to_owned()));
+        .with_url(std::env::var("CH_URL").unwrap_or("http://localhost:18123".to_owned()));
 
     // --- fetch synthetic data as Arrow batches ---
     let mut cursor = client.query(SQL).fetch_rows()?;

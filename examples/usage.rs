@@ -128,7 +128,8 @@ async fn select_count(client: &Client) -> Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    let client = Client::default().with_url("http://localhost:18123");
+    let client = Client::default()
+        .with_url(std::env::var("CH_URL").unwrap_or("http://localhost:18123".to_owned()));
 
     ddl(&client).await?;
     insert(&client).await?;

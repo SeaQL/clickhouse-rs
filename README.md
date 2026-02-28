@@ -143,7 +143,7 @@ let mut cursor = client
     .fetch_rows()?;
 
 while let Some(batch) = cursor.next_batch(256).await? {
-    // batch.columns[i]       - column name
+    // batch.column_names[i]  - column name
     // batch.column_data[i]   - Vec<Value> for column i
     // batch.num_rows
 }

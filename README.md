@@ -185,9 +185,11 @@ $ cargo run --example arrow_sensor_data --features=arrow,chrono,rust_decimal
 ### SeaORM -> ClickHouse
 
 Build an Arrow `RecordBatch` [using SeaORM](https://github.com/SeaQL/sea-orm/blob/master/examples/parquet_example/src/main.rs) and insert it directly into ClickHouse.
+Full working example: [`sea-orm-arrow-example`](sea-orm-arrow-example/src/main.rs).
 
 ```rust,ignore
-use sea_orm::ArrowSchema;
+use sea_orm::prelude::*;
+use sea_orm::{ArrowSchema, Set};
 
 mod measurement {
     use sea_orm::entity::prelude::*;
@@ -201,27 +203,31 @@ mod measurement {
         pub recorded_at: ChronoDateTime,
         pub sensor_id: i32,
         pub temperature: f64,
-        #[sea_orm(column_type = "Decimal(Some((10, 4)))")]
+        #[sea_orm(column_type = "Decimal(Some((38, 4)))")]
         pub voltage: Decimal,
     }
 
     impl ActiveModelBehavior for ActiveModel {}
 }
 
-let schema = measurement::Entity::arrow_schema();
+let base_ts = chrono::NaiveDate::from_ymd_opt(2026, 6, 15)
+    .unwrap()
+    .and_hms_milli_opt(8, 0, 0, 0)
+    .unwrap();
 
-let models: Vec<measurement::ActiveModel> = (1..=100)
+let models: Vec<measurement::ActiveModel> = (1..=10)
     .map(|i| {
+        let millis = i as u64 * 60_000 + ((i as u64 * 137 + 42) % 1000);
         measurement::ActiveModel {
-            id: Set(i),
-            recorded_at: Set(timestamp),
-            sensor_id: Set(sensor_id),
-            temperature: Set(temperature),
-            voltage: Set(voltage),
-        }
-    })
+        id: Set(i),
+        recorded_at: Set(base_ts + std::time::Duration::from_millis(millis)),
+        sensor_id: Set(100 + (i % 3)),
+        temperature: Set(20.0 + i as f64 * 0.5),
+        voltage: Set(Decimal::new(30000 + i as i64 * 100, 4)),
+    }})
     .collect();
 
+let schema = measurement::Entity::arrow_schema();
 let batch = measurement::ActiveModel::to_arrow(&models, &schema)?;
 
 let mut insert = client.insert_arrow("measurement", &batch).await?;
@@ -312,6 +318,7 @@ The same workflow works with `DataRow` via `ClickHouseSchema::from_data_row` too
 | [`arrow_batch_schema`](examples/arrow_batch_schema.rs) | `arrow` | Derive `CREATE TABLE` DDL from an Arrow `RecordBatch` |
 | [`arrow_insert`](examples/arrow_insert.rs) | `arrow` | Arrow `RecordBatch` insert round-trip with Decimal128 / Decimal256 |
 | [`arrow_sensor_data`](examples/arrow_sensor_data.rs) | `arrow` | Practical example of sensor data processing via Arrow |
+| [`sea-orm-arrow-example`](sea-orm-arrow-example/src/main.rs) | `arrow` | SeaORM entity -> Arrow RecordBatch -> ClickHouse insert |
 
 ```sh
 cargo run --example data_rows          --features sea-ql
@@ -322,6 +329,7 @@ cargo run --example arrow_batch        --features=arrow
 cargo run --example arrow_batch_schema --features arrow,chrono,rust_decimal
 cargo run --example arrow_insert       --features=arrow,rust_decimal,bigdecimal
 cargo run --example arrow_sensor_data  --features=arrow,chrono,rust_decimal
+cargo run -p sea-orm-arrow-example
 ```
 
 ## Contribution

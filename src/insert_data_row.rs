@@ -182,23 +182,20 @@ impl Client {
     /// Starts an INSERT for an Arrow [`RecordBatch`].
     ///
     /// Column names are taken from the batch schema. All batches passed to
-    /// [`DataRowInsert::write_batch`] must have the same schema.
+    /// [`DataRowInsert::write_batch`] must have a matching schema.
     ///
     /// Internally builds a prototype [`DataRow`] from the schema and delegates
     /// to [`Client::insert_data_row`], so validation and typed encoding apply
     /// in the same way.
-    ///
-    /// [`RecordBatch`]: sea_orm_arrow::arrow::array::RecordBatch
     #[cfg_attr(docsrs, doc(cfg(feature = "arrow")))]
     pub async fn insert_arrow(
         &self,
         table: &str,
-        batch: &sea_orm_arrow::arrow::array::RecordBatch,
+        schema: &sea_orm_arrow::arrow::datatypes::Schema,
     ) -> Result<DataRowInsert> {
         use std::sync::Arc;
 
-        let column_names: Arc<[Arc<str>]> = batch
-            .schema()
+        let column_names: Arc<[Arc<str>]> = schema
             .fields()
             .iter()
             .map(|f| Arc::from(f.name().as_str()))

@@ -89,7 +89,7 @@ async fn main() -> Result<()> {
     println!("Built RecordBatch with {} rows.", batch.num_rows());
 
     // ── 3. Insert the Arrow batch into ClickHouse ──────────────────────────
-    let mut insert = client.insert_arrow(TABLE, &batch).await?;
+    let mut insert = client.insert_arrow(TABLE, &batch.schema()).await?;
     insert.write_batch(&batch).await?;
     insert.end().await?;
     println!("Inserted {} rows.", batch.num_rows());

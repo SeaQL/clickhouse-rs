@@ -8,8 +8,8 @@ use crate::{
     row::{self, Row},
 };
 use clickhouse_types::put_rbwnat_columns_header;
-use std::num::Saturating;
 use serde::Serialize;
+use std::num::Saturating;
 use std::{future::Future, marker::PhantomData, time::Duration};
 
 // The desired max frame size.
@@ -85,6 +85,7 @@ impl<T> Insert<T> {
         Insert {
             insert: self.insert,
             row_metadata: self.row_metadata,
+            sent_rows: self.sent_rows,
             _marker: PhantomData,
         }
     }

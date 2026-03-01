@@ -230,7 +230,7 @@ let models: Vec<measurement::ActiveModel> = (1..=10)
 let schema = measurement::Entity::arrow_schema();
 let batch = measurement::ActiveModel::to_arrow(&models, &schema)?;
 
-let mut insert = client.insert_arrow("measurement", &batch).await?;
+let mut insert = client.insert_arrow("measurement", &batch.schema()).await?;
 insert.write_batch(&batch).await?;
 insert.end().await?;
 ```
@@ -273,7 +273,7 @@ PRIMARY KEY (recorded_at, device)"#);
 client.query(&ddl).execute().await?;
 
 // 3. Insert the batches
-let mut insert = client.insert_arrow("my_table", &batches[0]).await?;
+let mut insert = client.insert_arrow("my_table", &batches[0].schema()).await?;
 for batch in &batches {
     insert.write_batch(batch).await?;
 }

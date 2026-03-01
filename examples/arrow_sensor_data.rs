@@ -63,7 +63,7 @@ async fn main() -> Result<()> {
     // --- create table and insert the batches back ---
     ddl(&client).await?;
 
-    let mut insert = client.insert_arrow(TABLE, &batches[0]).await?;
+    let mut insert = client.insert_arrow(TABLE, &batches[0].schema()).await?;
     for batch in &batches {
         insert.write_batch(batch).await?;
     }

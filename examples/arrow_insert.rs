@@ -151,7 +151,7 @@ async fn main() -> Result<()> {
         &weights[3..],
     );
 
-    let mut insert = client.insert_arrow(TABLE, &batch1).await?;
+    let mut insert = client.insert_arrow(TABLE, &batch1.schema()).await?;
     insert.write_batch(&batch1).await?;
     insert.write_batch(&batch2).await?;
     insert.end().await?;

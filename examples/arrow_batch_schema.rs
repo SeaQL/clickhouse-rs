@@ -99,7 +99,7 @@ PRIMARY KEY (recorded_at, device)"#
     println!("Table `{TABLE}` created.");
 
     // ── 4. Insert all batches ────────────────────────────────────────────────
-    let mut insert = client.insert_arrow(TABLE, &batches[0]).await?;
+    let mut insert = client.insert_arrow(TABLE, &batches[0].schema()).await?;
     for batch in &batches {
         insert.write_batch(batch).await?;
     }

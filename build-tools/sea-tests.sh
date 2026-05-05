@@ -1,4 +1,11 @@
+#!/usr/bin/env bash
 set -e
+
+# Start a local ClickHouse test database first:
+#   bash build-tools/setup.sh
+#
+# The examples connect to CH_URL, defaulting to http://localhost:18123.
+
 cargo run --example data_rows --features=sea-ql
 cargo run --example data_rows --features=sea-ql,rust_decimal
 cargo run --example data_rows --features=sea-ql,rust_decimal,bigdecimal
